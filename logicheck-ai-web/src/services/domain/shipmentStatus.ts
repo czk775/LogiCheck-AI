@@ -1,8 +1,12 @@
+import { apiMode } from '../../services/api'
 import type { Shipment, ShipmentDocument, ShipmentStatusCode } from '../../types/domain'
 
 /* ============================================================
    货物 / 单证状态推导 —— 与已确认原型 statusShip / docStatus 一致。
    纯函数，UI 与 Mock 服务共用。
+
+   阶段二起，真实模式（本地服务）的单证状态由后端解析流水线推进：
+   uploaded → parsing → parsed | failed（failed 带失败原因）。
    ============================================================ */
 
 export type ChipTone = 'neutral' | 'info' | 'danger' | 'warn' | 'good'
@@ -21,8 +25,12 @@ const isInFlight = (d: ShipmentDocument) => d.status === 'uploading' || d.status
 
 export function statusShip(s: Shipment): ShipmentStatusCode {
   if (!s.documents.length) return 'draft'
-  if (!s.isDemo) return s.documents.some(isInFlight) ? 'processing' : 'awaiting'
   if (s.documents.some(isInFlight)) return 'processing'
+  if (!s.isDemo) {
+    // 真实模式：解析失败 → 检查失败；全部解析完成但尚无合规预检结果 → 证据不足
+    if (s.documents.some((d) => d.status === 'failed')) return 'failed'
+    return apiMode === 'real' ? 'insufficient' : 'awaiting'
+  }
   const pending = s.findings.filter((f) => f.status !== 'resolved').length
   if (pending) return 'needs_review'
   return s.documents.some((d) => d.status !== 'parsed') ? 'insufficient' : 'checked'
@@ -41,9 +49,10 @@ export function docStatusMeta(d: ShipmentDocument): { label: string; tone: ChipT
     case 'parsing':
       return { label: '解析中', tone: 'info' }
     case 'failed':
-      return { label: '上传失败', tone: 'danger' }
+      // 失败带明确原因（OCR 未接入 / 不支持的报文类型 / 无文本层…）
+      return { label: '处理失败', tone: 'danger' }
     default:
-      // uploaded：文件已保存，等待真实 AI 解析
-      return { label: '待真实 AI 解析', tone: 'warn' }
+      // uploaded：文件已保存并进入解析队列
+      return { label: '等待解析', tone: 'warn' }
   }
 }

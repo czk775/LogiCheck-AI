@@ -220,10 +220,13 @@ test('E14 真实上传货物的诚实边界：无字段、无检查结果、无�
   fd.append('files', new Blob([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64')], { type: 'image/png' }), 'x.png')
   await c.postForm(`/api/shipments/${id}/documents`, fd)
 
+  // 上传后进入解析队列；等待排空后断言终态
+  await env.waitForParseIdle()
   const detail = await c.get(`/api/shipments/${id}`)
-  const s = (detail.json as { shipment: { documents: Array<{ fields: Record<string, string>; status: string }>; findings: unknown[] } }).shipment
+  const s = (detail.json as { shipment: { documents: Array<{ fields: Record<string, string>; status: string; error?: string }>; findings: unknown[] } }).shipment
   assert.deepEqual(s.documents[0].fields, {}, '真实上传文件不得有模拟提取字段')
-  assert.equal(s.documents[0].status, 'uploaded')
+  assert.equal(s.documents[0].status, 'failed', '图片 OCR 未接入时应明确失败，不得伪造字段')
+  assert.ok((s.documents[0].error ?? '').includes('OCR'), '失败原因必须说明 OCR 未接入')
   assert.equal(s.findings.length, 0)
 
   const checkRes = await c.get(`/api/shipments/${id}/check-results`)

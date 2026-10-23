@@ -137,9 +137,7 @@ export function EvidencePreview({ doc, highlight = 'quantity' }: EvidencePreview
     )
   }
   if (doc.isDemo) return <DemoDocumentPaper doc={doc} highlight={highlight} />
-  if (doc.status === 'failed') {
-    return <div className="prototype-note">上传失败，无法预览。请重新上传或重试。</div>
-  }
+  // 注意：解析失败（如 OCR 未接入）不影响原件预览——文件本身仍在，失败原因由抽屉单独展示
   if (loading) {
     return (
       <div className="prototype-note">
@@ -148,7 +146,7 @@ export function EvidencePreview({ doc, highlight = 'quantity' }: EvidencePreview
     )
   }
   if (missing) {
-    return <div className="prototype-note">未找到本地原文件，请重新上传。</div>
+    return <div className="prototype-note">未找到原文件（可能保存失败），请重新上传。</div>
   }
   if (!url) {
     return <div className="prototype-note">正在从浏览器本地存储读取文件…</div>

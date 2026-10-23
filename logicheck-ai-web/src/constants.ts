@@ -3,7 +3,7 @@ import { apiMode } from './services/api'
 /** 全局环境声明（诚实标注当前运行边界，PRD §十二） */
 export const DEMO_NOTICE =
   apiMode === 'real'
-    ? '本地服务版 · 数据保存在本机服务器（SQLite + 本地文件） · AI 解析尚未接入，提取字段为演示数据'
+    ? '本地服务版 · 数据保存在本机服务器（SQLite + 本地文件） · PDF/EDI 确定性解析已启用；大模型与 OCR 尚未接入'
     : '前端演示版本 · Mock 服务 · 数据仅保存在当前浏览器 · 未连接真实 AI、数据库或身份验证服务'
 
 /** 上传限制（与原型一致） */

@@ -74,6 +74,20 @@ export interface ShipmentDocument {
   fields: Record<string, string>
   /** 原始提取值快照（人工修正前的值） */
   originalFields?: Record<string, string>
+  /** 字段溯源信息（状态/置信度/标准化值/页码/位置/来源；后端聚合提供） */
+  fieldMeta?: Record<string, FieldMeta>
+  /** 解析摘要（可解释：提取了几个字段、单证类型、处理说明） */
+  parseSummary?: string
+}
+
+/** 字段级溯源信息（与后端 extracted_fields 对齐） */
+export interface FieldMeta {
+  status: 'extracted' | 'low_confidence' | 'missing' | 'unavailable'
+  confidence: number
+  normalized: string
+  page: number | null
+  position: string | null
+  source: string
 }
 
 /* ---------- 字段与证据 ---------- */

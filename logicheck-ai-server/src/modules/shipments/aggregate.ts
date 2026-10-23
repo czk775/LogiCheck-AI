@@ -7,6 +7,7 @@
 import type { Db } from '../../db/index.ts'
 import type {
   ActivityEvent,
+  FieldMeta,
   Finding,
   HumanDecision,
   ProcessingRun,
@@ -39,6 +40,7 @@ interface DocumentRow {
   is_demo: number
   created_at: string
   updated_at: string
+  parse_summary: string | null
 }
 
 interface FieldRow {
@@ -47,6 +49,11 @@ interface FieldRow {
   value: string
   original_value: string | null
   source: string
+  normalized_value: string | null
+  page: number | null
+  position: string | null
+  confidence: number | null
+  status: string | null
 }
 interface FindingRow {
   id: string
@@ -93,24 +100,40 @@ export function shipmentRowToAggregate(db: Db, row: ShipmentRow): Shipment {
     row.id,
   )
   const docIds = docs.map((d) => d.id)
-  const fieldsByDoc = new Map<string, { fields: Record<string, string>; original?: Record<string, string> }>()
+  const fieldsByDoc = new Map<
+    string,
+    { fields: Record<string, string>; original?: Record<string, string>; meta: Record<string, FieldMeta> }
+  >()
   if (docIds.length) {
     const placeholders = docIds.map(() => '?').join(',')
     const fieldRows = db.all<FieldRow & { rowid: number }>(
-      `SELECT document_id, field_key, value, original_value, source, rowid FROM extracted_fields WHERE document_id IN (${placeholders}) ORDER BY rowid ASC`,
+      `SELECT document_id, field_key, value, original_value, source, normalized_value, page, position, confidence, status, rowid
+         FROM extracted_fields WHERE document_id IN (${placeholders}) ORDER BY rowid ASC`,
       ...docIds,
     )
     for (const f of fieldRows) {
       let entry = fieldsByDoc.get(f.document_id)
       if (!entry) {
-        entry = { fields: {} }
+        entry = { fields: {}, meta: {} }
         fieldsByDoc.set(f.document_id, entry)
       }
       // 同一文档同一字段多次修正：最后写入的值生效；originalFields 取最早一次人工修正前的值
       if (f.source === 'manual' && f.original_value !== null && entry.original?.[f.field_key] === undefined) {
         entry.original = { ...(entry.original ?? {}), [f.field_key]: f.original_value }
       }
-      entry.fields[f.field_key] = f.value
+      const status = (f.status ?? 'extracted') as FieldMeta['status']
+      // missing / unavailable 不进入 fields 值映射（值可能为空串）
+      if (status !== 'missing' && status !== 'unavailable') {
+        entry.fields[f.field_key] = f.value
+      }
+      entry.meta[f.field_key] = {
+        status,
+        confidence: f.confidence ?? 0,
+        normalized: f.normalized_value ?? f.value,
+        page: f.page ?? null,
+        position: f.position ?? null,
+        source: f.source,
+      }
     }
   }
 
@@ -131,6 +154,8 @@ export function shipmentRowToAggregate(db: Db, row: ShipmentRow): Shipment {
     }
     if (d.error) doc.error = d.error
     if (f?.original && Object.keys(f.original).length) doc.originalFields = { ...f.original }
+    if (f && Object.keys(f.meta).length) doc.fieldMeta = { ...f.meta }
+    if (d.parse_summary) doc.parseSummary = d.parse_summary
     return doc
   })
 

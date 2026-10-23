@@ -22,6 +22,22 @@ export interface ShipmentDocument {
   error?: string
   fields: Record<string, string>
   originalFields?: Record<string, string>
+  /** 阶段二：字段元数据（置信度 / 状态 / 来源位置），按 fieldKey 索引 */
+  fieldMeta?: Record<string, FieldMeta>
+  /** 阶段二：解析产物摘要（可解释） */
+  parseSummary?: string
+}
+
+/** 提取字段的溯源元数据（阶段二 Schema） */
+export interface FieldMeta {
+  /** extracted / low_confidence / missing / unavailable */
+  status: 'extracted' | 'low_confidence' | 'missing' | 'unavailable'
+  confidence: number
+  normalized: string
+  page: number | null
+  position: string | null
+  /** 提取来源：deterministic / ai / manual / demo */
+  source: string
 }
 
 export interface HumanDecision {

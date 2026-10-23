@@ -101,7 +101,7 @@ try {
       })
     })()`)
     console.log(`t=${((i + 1) * 0.5).toFixed(1)}s`, info)
-    if (info.includes('待真实 AI 解析')) break
+    if (info.includes('等待解析')) break
   }
   console.log('localStorage docs:', await cdp.eval(`(() => {
     const key = Object.keys(localStorage).find(k => k.startsWith('logicheck_hifi_v1_'))

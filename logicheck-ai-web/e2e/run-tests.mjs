@@ -474,21 +474,44 @@ async function main() {
     await waitFor(cdp, `document.querySelector('.workspace-title')`, 5000, 'new workspace')
     check('I1 新建货物进入空工作台', await cdp.eval(`document.body.textContent.includes('上传第一份单证，开始预检')`))
     check('I2 空状态显示上传区', await cdp.eval(`!!document.querySelector('[data-testid="upload-zone"]')`))
-    check('I3 非演示货物无 AI 字段/规则空态', await cdp.eval(`document.body.textContent.includes('暂无 AI 提取字段') && document.body.textContent.includes('等待合规规则执行')`))
+    check('I3 非演示货物无 AI 字段/规则空态', await cdp.eval(`document.body.textContent.includes(${API_MODE === 'real' ? "'暂无提取字段'" : "'暂无 AI 提取字段'"}) && document.body.textContent.includes('等待合规规则执行')`))
 
     // 上传两个真实文件
     await setFileInput(cdp, [path.join(FIXTURES, 'test-invoice.png'), path.join(FIXTURES, 'test-bol.edi')])
     await waitFor(cdp, `document.querySelectorAll('[data-testid="doc-row"]').length === 2`, 8000, 'uploaded docs')
     check('I4 上传后出现 2 份单证', await cdp.eval(`document.querySelectorAll('[data-testid="doc-row"]').length === 2`))
     // 等待两份文档都到达终态（mock 状态机每份独立翻转，1.1–2.0s）
-    await waitFor(cdp, `document.querySelectorAll('.chip.warn').length >= 2`, 8000, 'awaiting AI badge')
-    check('I5 状态推进为「待真实 AI 解析」（不伪造解析成功）', await cdp.eval(`document.querySelectorAll('.chip.warn').length >= 2 && !document.body.textContent.includes('已解析')`))
+    if (API_MODE === 'mock') {
+      await waitFor(cdp, `document.querySelectorAll('.chip.warn').length >= 2`, 8000, 'awaiting AI badge')
+      check('I5 状态推进为「等待解析」（不伪造解析成功）', await cdp.eval(`document.querySelectorAll('.chip.warn').length >= 2 && !document.body.textContent.includes('已解析')`))
+    } else {
+      // 真实模式：PNG → 明确失败（OCR 未接入）；IFTMIN EDI → 确定性解析成功
+      await waitFor(
+        cdp,
+        `document.querySelector('[data-file-name="test-invoice.png"]')?.textContent.includes('处理失败') && document.querySelector('[data-file-name="test-bol.edi"]')?.textContent.includes('已解析')`,
+        12000,
+        'real terminal states',
+      )
+      check('I5r PNG 诚实失败（OCR 未接入）+ IFTMIN EDI 确定性解析成功', await cdp.eval(`(() => {
+        const png = document.querySelector('[data-file-name="test-invoice.png"]')?.textContent ?? ''
+        const edi = document.querySelector('[data-file-name="test-bol.edi"]')?.textContent ?? ''
+        return png.includes('处理失败') && edi.includes('已解析')
+      })()`))
+      check('I5r2 工作台货物信息展示真实提取字段（数量 1000，来自 EDI 报文）', await cdp.eval(`document.querySelector('#profile')?.textContent.includes('1000')`))
+    }
     check('I6 上传反馈 toast', await cdp.eval(`Array.from(document.querySelectorAll('[data-testid="toast"]')).some(t => t.textContent.includes('2 份文件正在接收'))`))
     // 预览图片
     await cdp.eval(`(() => { const row = document.querySelector('[data-file-name="test-invoice.png"]'); row.querySelector('.link-btn').click(); })()`)
     await waitFor(cdp, `document.querySelector('[data-testid="doc-drawer"] img.preview-img')`, 8000, 'image preview')
     check('I7 真实图片原件预览（blob URL）', await cdp.eval(`(() => { const img = document.querySelector('[data-testid="doc-drawer"] img.preview-img'); return !!img && img.src.startsWith('blob:') })()`))
-    check('I8 预览抽屉声明未 AI 解析', await cdp.eval(`document.querySelector('[data-testid="doc-drawer"]')?.textContent.includes('原件预览（未 AI 解析）')`))
+    check(
+      API_MODE === 'mock' ? 'I8 预览抽屉声明未 AI 解析' : 'I8r 预览抽屉展示真实失败原因（OCR 未接入）',
+      await cdp.eval(
+        API_MODE === 'mock'
+          ? `document.querySelector('[data-testid="doc-drawer"]')?.textContent.includes('原件预览（未 AI 解析）')`
+          : `(() => { const t = document.querySelector('[data-testid="doc-drawer"]')?.textContent ?? ''; return t.includes('处理失败原因') && t.includes('OCR') })()`,
+      ),
+    )
     await cdp.eval(`document.querySelector('[data-testid="doc-drawer"] .close').click()`)
     // 预览 EDI 文本
     await cdp.eval(`(() => { const row = document.querySelector('[data-file-name="test-bol.edi"]'); row.querySelector('.link-btn').click(); })()`)
@@ -519,9 +542,9 @@ async function main() {
       })()`)
       await goto(`${BASE}/shipments/${await cdp.eval(`(() => { const key='logicheck_hifi_v1_demo@logicheck.ai'; return JSON.parse(localStorage.getItem(key)).find(x=>!x.isDemo).id })()`)}`)
       await waitFor(cdp, `document.querySelector('[data-file-name="test-bol.edi"]')`, 8000, 'workspace after reload')
-      check('K1 失败状态可见 + 重试按钮', await cdp.eval(`(() => { const row = document.querySelector('[data-file-name="test-bol.edi"]'); return row.textContent.includes('上传失败') && !!row.querySelector('[data-testid="retry-doc"]') })()`))
+      check('K1 失败状态可见 + 重试按钮', await cdp.eval(`(() => { const row = document.querySelector('[data-file-name="test-bol.edi"]'); return row.textContent.includes('处理失败') && !!row.querySelector('[data-testid="retry-doc"]') })()`))
       await cdp.eval(`document.querySelector('[data-file-name="test-bol.edi"] [data-testid="retry-doc"]').click()`)
-      await waitFor(cdp, `document.querySelector('[data-file-name="test-bol.edi"]')?.textContent.includes('待真实 AI 解析')`, 5000, 'retry ok')
+      await waitFor(cdp, `document.querySelector('[data-file-name="test-bol.edi"]')?.textContent.includes('等待解析')`, 5000, 'retry ok')
       check('K2 重试后恢复为待解析状态', true)
     } else {
       // 真实模式：上传链路只到 uploaded（不伪造失败态）。验证点：
@@ -538,10 +561,12 @@ async function main() {
         const body = await res.json().catch(() => null)
         return { ok: res.ok, status: body?.document?.status ?? null, error: body?.document?.error ?? null }
       })()`, true)
-      check('K1r 重试接口经会话可调用且幂等（状态仍为 uploaded，不伪造解析）', retryResult && retryResult.ok === true && retryResult.status === 'uploaded' && !retryResult.error, JSON.stringify(retryResult))
+      check('K1r 重试接口经会话可调用且幂等（不产生假解析）', retryResult && retryResult.ok === true && retryResult.status === 'uploaded' && !retryResult.error, JSON.stringify(retryResult))
       await goto(`${BASE}${await cdp.eval('location.pathname')}`)
       await waitFor(cdp, `document.querySelector('[data-file-name="test-bol.edi"]')`, 8000, 'workspace after reload')
-      check('K2r 刷新后单证与状态从服务端恢复', await cdp.eval(`(() => { const row = document.querySelector('[data-file-name="test-bol.edi"]'); return !!row && row.textContent.includes('待真实 AI 解析') })()`))
+      // 真实模式：重试会真实重新入队解析，等待终态（IFTMIN 支持 → 已解析）
+      await waitFor(cdp, `document.querySelector('[data-file-name="test-bol.edi"]')?.textContent.includes('已解析')`, 10000, 'reparse done')
+      check('K2r 刷新后单证与状态从服务端恢复（重试后重新解析完成）', await cdp.eval(`(() => { const row = document.querySelector('[data-file-name="test-bol.edi"]'); return !!row && row.textContent.includes('已解析') })()`))
     }
 
     /* ===== L. 删除单证 + 删除货物 ===== */

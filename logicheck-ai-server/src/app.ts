@@ -19,10 +19,13 @@ import { registerShipmentRoutes } from './modules/shipments/routes.ts'
 import { ShipmentService } from './modules/shipments/service.ts'
 import { registerDocumentRoutes } from './modules/documents/routes.ts'
 import { DocumentService } from './modules/documents/service.ts'
+import { FileStorage } from './modules/documents/storage.ts'
 import { registerFindingRoutes } from './modules/findings/routes.ts'
 import { FindingService } from './modules/findings/service.ts'
 import { registerRuleRoutes } from './modules/rules/routes.ts'
 import { RuleService } from './modules/rules/service.ts'
+import { buildProviders } from './modules/parsing/providers/index.ts'
+import { ParsePipeline, ParseQueue } from './modules/parsing/pipeline.ts'
 
 export interface BuiltApp {
   app: ReturnType<typeof Fastify>
@@ -34,6 +37,7 @@ export interface BuiltApp {
   documents: DocumentService
   findings: FindingService
   rules: RuleService
+  parseQueue: ParseQueue
 }
 
 export function buildApp(options: { config?: AppConfig; db?: Db; mail?: MailService } = {}): BuiltApp {
@@ -88,7 +92,17 @@ export function buildApp(options: { config?: AppConfig; db?: Db; mail?: MailServ
 
   const auth = new AuthService(db, config, mail)
   const shipments = new ShipmentService(db, config)
-  const documents = new DocumentService(db, config, shipments)
+
+  /* 单证解析流水线：进程内串行队列 + 可恢复状态机 */
+  const providers = buildProviders(config)
+  const pipeline = new ParsePipeline(db, new FileStorage(config), providers.extraction, providers.ocr)
+  const parseQueue = new ParseQueue((documentId) => pipeline.run(documentId))
+  // 启动恢复：上次服务中断时留在 parsing 的文档 → uploaded 重新入队
+  const recovered = pipeline.recoverInterrupted()
+  const documents = new DocumentService(db, config, shipments, (documentId) => parseQueue.enqueue(documentId))
+  for (const id of recovered) parseQueue.enqueue(id)
+  for (const id of pipeline.pendingDocumentIds()) parseQueue.enqueue(id)
+
   const findings = new FindingService(db, shipments)
   const rules = new RuleService(db)
 
@@ -98,7 +112,7 @@ export function buildApp(options: { config?: AppConfig; db?: Db; mail?: MailServ
   registerFindingRoutes(app, auth, findings)
   registerRuleRoutes(app, rules)
 
-  app.get('/api/healthz', async () => ({ ok: true, db: 'sqlite', mode: mail.mode }))
+  app.get('/api/healthz', async () => ({ ok: true, db: 'sqlite', mode: mail.mode, extraction: providers.extraction.id }))
 
-  return { app, config, db, mail, auth, shipments, documents, findings, rules }
+  return { app, config, db, mail, auth, shipments, documents, findings, rules, parseQueue }
 }

@@ -1,8 +1,9 @@
 /* ============================================================
    单证管理服务：上传校验 / 私有存储 / 预览取回 / 删除 / 重试。
 
-   诚实边界（PRD §10）：文件真实保存并可供预览，但状态机只到
-   uploaded —— 不接入真实 AI 就不产生提取字段与解析结论。
+   状态机（阶段二接入真实解析流水线）：
+   uploaded → parsing → parsed | failed（error 带稳定原因码）
+   上传只负责「真实落库 + 入队」，解析由 ParsePipeline 异步推进。
    ============================================================ */
 
 import type { Db } from '../../db/index.ts'
@@ -64,6 +65,8 @@ export class DocumentService {
     private readonly db: Db,
     config: AppConfig,
     private readonly shipments: { getForUser: (userId: string, id: string) => Shipment | null },
+    /** 解析入队回调（阶段二：上传/重试后触发 ParsePipeline） */
+    private readonly enqueueParse: (documentId: string) => void = () => {},
   ) {
     this.storage = new FileStorage(config)
   }
@@ -212,6 +215,7 @@ export class DocumentService {
     })
 
     if (old?.storage_key) await this.storage.remove(old.storage_key)
+    if (status === 'uploaded') this.enqueueParse(doc.id)
     return doc
   }
 
@@ -279,10 +283,11 @@ export class DocumentService {
         'INSERT INTO activities (id, shipment_id, text, at) VALUES (?, ?, ?, ?)',
         newId('act'),
         row.shipment_id,
-        `重试 ${row.file_name}：已保留文件，等待真实解析服务接入`,
+        `重试 ${row.file_name}：文件已保留，重新排队解析`,
         nowIso(),
       )
     })
+    this.enqueueParse(row.id)
     const doc: ShipmentDocument = {
       id: row.id,
       shipmentId: row.shipment_id,

@@ -75,6 +75,8 @@ export interface TestEnv {
   uploadsDir: string
   client: () => TestClient
   readOutbox: () => OutboxMail[]
+  /** 等待解析队列排空（上传后断言终态前调用） */
+  waitForParseIdle: () => Promise<void>
   /** 模拟服务重启：关闭应用与连接，用同一数据库文件重新装配 */
   restart: () => Promise<string>
   cleanup: () => Promise<void>
@@ -89,6 +91,7 @@ export async function createTestEnv(): Promise<TestEnv> {
     mailOutboxDir: join(dir, 'outbox'),
     sessionTtlDays: 7,
     corsOrigin: 'http://localhost:5173',
+    extractionProvider: 'deterministic',
     smtp: null,
   }
 
@@ -105,7 +108,12 @@ export async function createTestEnv(): Promise<TestEnv> {
       .map((f) => JSON.parse(readFileSync(join(config.mailOutboxDir, f), 'utf8')) as OutboxMail)
       .sort((a, b) => a.at.localeCompare(b.at))
 
+  const waitForParseIdle = async (): Promise<void> => {
+    await built.parseQueue.onIdle()
+  }
+
   const restart = async (): Promise<string> => {
+    await built.parseQueue.onIdle() // 等解析排空再重启，避免半成品状态
     await built.app.close()
     db.close()
     db = openDatabase(config.databasePath)
@@ -117,6 +125,7 @@ export async function createTestEnv(): Promise<TestEnv> {
 
   const cleanup = async () => {
     try {
+      await built.parseQueue.onIdle()
       await built.app.close()
       db.close()
     } catch {
@@ -125,7 +134,18 @@ export async function createTestEnv(): Promise<TestEnv> {
     rmSync(dir, { recursive: true, force: true })
   }
 
-  return { baseUrl, config, db, outboxDir: config.mailOutboxDir, uploadsDir: config.uploadDir, client, readOutbox, restart, cleanup }
+  return {
+    get baseUrl() { return baseUrl },
+    config,
+    get db() { return db }, // restart 后指向新连接（旧连接已关闭）
+    outboxDir: config.mailOutboxDir,
+    uploadsDir: config.uploadDir,
+    client,
+    readOutbox,
+    waitForParseIdle,
+    restart,
+    cleanup,
+  }
 }
 
 async function resolveUrl(app: { server: { address: () => unknown } }): Promise<string> {

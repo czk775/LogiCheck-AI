@@ -11,6 +11,8 @@ const schema = z.object({
   MAIL_OUTBOX_DIR: z.string().default('./data/mail-outbox'),
   SESSION_TTL_DAYS: z.coerce.number().int().positive().default(7),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
+  /* 提取 Provider：deterministic（默认，无外部 API）/ ai（第五阶段配置 Key 后启用） */
+  EXTRACTION_PROVIDER: z.enum(['deterministic', 'ai']).default('deterministic'),
   /* 可选 SMTP（全部留空 → 本地发件箱模式） */
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().optional(),
@@ -27,6 +29,7 @@ export interface AppConfig {
   mailOutboxDir: string
   sessionTtlDays: number
   corsOrigin: string
+  extractionProvider: 'deterministic' | 'ai'
   smtp: {
     host: string
     port: number
@@ -49,6 +52,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv): AppConfig {
     mailOutboxDir: resolve(parsed.MAIL_OUTBOX_DIR),
     sessionTtlDays: parsed.SESSION_TTL_DAYS,
     corsOrigin: parsed.CORS_ORIGIN,
+    extractionProvider: parsed.EXTRACTION_PROVIDER,
     smtp: smtpReady
       ? {
           host: parsed.SMTP_HOST!,
