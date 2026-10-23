@@ -1,0 +1,6 @@
+# 运行时数据（SQLite 数据库 / 上传文件 / 本地邮件发件箱）——禁止提交 Git
+data/
+dist/
+node_modules/
+.env
+*.log

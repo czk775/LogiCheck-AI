@@ -1,0 +1,37 @@
+import { useStore } from '../../store/AppStore'
+import { AboutModal, GuideModal } from './GuideModal'
+import { ForgotPasswordModal } from './ForgotPasswordModal'
+import { RecheckInfoModal, RuleHelpModal } from './RuleHelpModal'
+import { DeleteDocumentModal, DeleteShipmentModal } from './DeleteModals'
+import { FieldEditModal } from './FieldEditModal'
+import { ReviewModal } from './ReviewModal'
+
+/** 弹窗挂载点：按 UI 状态渲染对应模态 */
+export function ModalHost() {
+  const { state } = useStore()
+  const modal = state.modal
+  if (!modal) return null
+
+  switch (modal.type) {
+    case 'guide':
+      return <GuideModal />
+    case 'about':
+      return <AboutModal />
+    case 'rule-help':
+      return <RuleHelpModal />
+    case 'recheck-info':
+      return <RecheckInfoModal />
+    case 'forgot-password':
+      return <ForgotPasswordModal />
+    case 'delete-shipment':
+      return <DeleteShipmentModal shipmentId={modal.shipmentId} />
+    case 'delete-document':
+      return <DeleteDocumentModal documentId={modal.documentId} />
+    case 'field-edit':
+      return <FieldEditModal fieldKey={modal.fieldKey} sourceDocumentId={modal.sourceDocumentId} />
+    case 'review':
+      return <ReviewModal findingId={modal.findingId} />
+    default:
+      return null
+  }
+}

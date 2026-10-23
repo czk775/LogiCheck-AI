@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#070c15" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230c1c2e'/%3E%3Cpath d='m32 12 18 10-18 10-18-10 18-10Zm-18 10v20l18 10 18-10V22M32 32v20' fill='none' stroke='%2359d9df' stroke-width='4' stroke-linejoin='round'/%3E%3C/svg%3E" />
+    <title>LogiCheck AI · 货物单证智能预检工作台</title>
+    <meta name="description" content="LogiCheck AI 跨境货物单证智能预检工作台。当前为前端演示版本，使用 Mock 服务，未接入真实 AI 与后端。" />
+    <!-- 字体已本地自托管（src/assets/fonts），不依赖外部 CDN -->
+    <script>
+      // 首屏前应用主题，避免闪白；与已确认原型使用同一存储键。
+      try {
+        var t = localStorage.getItem('logicheck_theme_v2')
+        document.documentElement.dataset.theme = t === 'light' ? 'light' : 'dark'
+      } catch (e) {
+        document.documentElement.dataset.theme = 'dark'
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

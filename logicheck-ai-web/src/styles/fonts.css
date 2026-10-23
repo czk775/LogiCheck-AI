@@ -1,0 +1,16 @@
+/* 自托管可变字体（latin 子集，来自 Google Fonts；中文回退到系统 PingFang SC / Microsoft YaHei） */
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('../assets/fonts/dm-sans-var.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('../assets/fonts/manrope-var.woff2') format('woff2');
+}

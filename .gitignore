@@ -1,0 +1,31 @@
+# 依赖与构建产物
+node_modules/
+dist/
+*.tsbuildinfo
+.temp/
+.cache/
+
+# 运行时数据（真实数据库 / 上传文件 / 本地发件箱）
+data/
+*.db
+*.db-wal
+*.db-shm
+outbox/
+
+# 本地环境与日志
+.env
+.env.local
+*.log
+npm-debug.log*
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# 会话与工作区数据（非项目源码）
+.workbuddy/
+
+# 大体量二进制交付物（可由 prototype_src 重新导出）
+LogiCheck_AI_HiFi_Dual_Theme_v2.zip

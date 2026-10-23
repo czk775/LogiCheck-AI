@@ -1,0 +1,86 @@
+/* ============================================================
+   LogiCheck AI · Design Tokens
+   与已确认高保真原型逐值一致（Dark_Light_Comparison / v2 HTML）
+   - Dark：深海军蓝 + 科技青
+   - Light：雾白 + 冷灰蓝 + 科技青
+   主题通过 <html data-theme="dark|light"> 切换，键名 logicheck_theme_v2
+   ============================================================ */
+
+:root {
+  color-scheme: dark;
+
+  /*  surfaces  */
+  --bg: #070c15;
+  --base: #0b1320;
+  --shell: #0b1422;
+  --panel: #111d2d;
+  --panel2: #142236;
+  --deep: #0a1525;
+  --line: #23364c;
+  --line2: #1a2a3c;
+
+  /*  text  */
+  --txt: #ebf3fd;
+  --mute: #8399b1;
+  --soft: #abc0d3;
+
+  /*  accents  */
+  --cyan: #59d9df;
+  --blue: #6b97ff;
+  --red: #f38b90;
+  --amber: #f5c47b;
+  --green: #7de0b5;
+
+  /*  motion / shape  */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --radius: 15px;
+}
+
+html[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #f3f7fb;
+  --base: #f8fbfd;
+  --shell: #ffffff;
+  --panel: #ffffff;
+  --panel2: #f6f9fc;
+  --deep: #edf3f8;
+  --line: #d5e0e9;
+  --line2: #e3ebf2;
+
+  --txt: #1c3045;
+  --mute: #60768b;
+  --soft: #405b72;
+
+  --cyan: #097b8d;
+  --blue: #356bd2;
+  --red: #b64c58;
+  --amber: #946016;
+  --green: #167456;
+}
+
+/* 暴露给 Tailwind 工具类：bg-panel / text-mute / border-line / font-display ... */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-base: var(--base);
+  --color-shell: var(--shell);
+  --color-panel: var(--panel);
+  --color-panel2: var(--panel2);
+  --color-deep: var(--deep);
+  --color-line: var(--line);
+  --color-line2: var(--line2);
+  --color-txt: var(--txt);
+  --color-mute: var(--mute);
+  --color-soft: var(--soft);
+  --color-cyan: var(--cyan);
+  --color-blue: var(--blue);
+  --color-red: var(--red);
+  --color-amber: var(--amber);
+  --color-green: var(--green);
+
+  --font-sans: 'DM Sans', 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-display: 'Manrope', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+
+  --radius-panel: 15px;
+  --ease-apple: cubic-bezier(0.22, 1, 0.36, 1);
+}
