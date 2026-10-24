@@ -2,6 +2,7 @@ import { Icon } from '../../components/Icon'
 import { EmptyState } from '../../components/EmptyState'
 import { useStore } from '../../store/AppStore'
 import { apiMode } from '../../services/api'
+import { describeExtractionSource } from '../../services/domain/aiStatus'
 import { FIELD_LABELS, PROFILE_DISPLAY_FIELDS } from '../../types/domain'
 import type { Shipment } from '../../types/domain'
 
@@ -69,6 +70,12 @@ function RealProfileSection({
     }
   }
   const hasFields = Object.keys(merged).length > 0
+  // 来源说明按实际提取方式给出：多份单证可能来源不同，取「最能代表本次提取」的一个
+  const sourceProvider =
+    s.documents.find((d) => d.extractionProvider === 'ocr+ai')?.extractionProvider ??
+    s.documents.find((d) => d.extractionProvider === 'ai')?.extractionProvider ??
+    s.documents.find((d) => d.extractionProvider)?.extractionProvider
+  const sourceModel = s.documents.find((d) => d.extractionModel)?.extractionModel
 
   return (
     <section id="profile" className="glass-panel section-card">
@@ -107,7 +114,7 @@ function RealProfileSection({
           </div>
           <p className="text-note" style={{ marginTop: 10 }}>
             {real
-              ? '字段来自服务端确定性解析（PDF 文本层 / EDIFACT 段映射）；「—」表示尚未从单证中提取到，不以默认值填充。'
+              ? describeExtractionSource(sourceProvider, sourceModel) + '「—」表示尚未从单证中提取到，不以默认值填充。'
               : '上传真实文件后，需接入 AI 才能生成可验证的货物信息。'}
           </p>
         </>

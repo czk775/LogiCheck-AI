@@ -210,6 +210,38 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [state.shipments, state.activeShipmentId],
   )
 
+  /**
+   * 解析进行中 → 轮询刷新。
+   *
+   * 真实 AI 解析要跑几秒到几十秒（大模型 + 视觉 OCR），
+   * 而后端是异步队列，前端不主动轮询就会一直停在「解析中」。
+   * 一旦所有单证都到达终态（parsed / failed），自动停止轮询。
+   */
+  const parsing = useMemo(
+    () =>
+      state.shipments.some((s) =>
+        s.documents.some(
+          (d) => d.status === 'uploading' || d.status === 'uploaded' || d.status === 'parsing',
+        ),
+      ),
+    [state.shipments],
+  )
+
+  useEffect(() => {
+    if (!REAL || !parsing) return
+    const timer = window.setInterval(() => {
+      void syncShipments()
+    }, 1500)
+    return () => window.clearInterval(timer)
+  }, [parsing, syncShipments])
+
+  /* 解析刚结束：同步一次 AI 状态（AI 未配置时状态条要如实更新） */
+  const prevParsing = useRef(parsing)
+  useEffect(() => {
+    if (prevParsing.current && !parsing) void syncAiStatus()
+    prevParsing.current = parsing
+  }, [parsing, syncAiStatus])
+
   const value = useMemo<AppStoreValue>(() => {
     const requireActive = (): Shipment => {
       const s = stateRef.current.shipments.find((x) => x.id === stateRef.current.activeShipmentId)

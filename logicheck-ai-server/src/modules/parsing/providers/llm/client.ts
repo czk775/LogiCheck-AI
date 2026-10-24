@@ -22,6 +22,7 @@ export type LlmErrorCode =
   | 'network_error'
   | 'invalid_json'
   | 'invalid_response'
+  | 'invalid_request'
   | 'not_configured'
 
 /** 面向用户的失败原因说明（不含任何密钥） */
@@ -34,6 +35,7 @@ const USER_MESSAGE: Record<LlmErrorCode, string> = {
   network_error: '无法连接 AI 服务：请检查网络连通性、服务商地址是否正确，以及是否需要配置代理。',
   invalid_json: 'AI 返回内容不是合法 JSON：模型输出被截断或格式不符，可重试一次。',
   invalid_response: 'AI 返回内容不符合预期结构：可重试一次。',
+  invalid_request: 'AI 服务拒绝了本次请求：请求内容不符合模型要求（常见原因：图片尺寸过小、文件格式不支持、页数超限）。请更换或处理该单证后重试。',
   not_configured: 'AI 服务未配置：请在服务端 .env 中填入 API Key 与模型名后重启服务。',
 }
 
@@ -47,6 +49,7 @@ const RETRYABLE: Record<LlmErrorCode, boolean> = {
   network_error: true,
   invalid_json: false,
   invalid_response: false,
+  invalid_request: false,
   not_configured: false,
 }
 
@@ -151,6 +154,9 @@ export function classifyHttpFailure(status: number, body: unknown): LlmErrorCode
   }
   if (status === 408) return 'timeout'
   if (status >= 500) return 'service_unavailable'
+  // 4xx：请求本身被服务商拒绝（参数不合法 / 图片过小 / 格式不支持），
+  // 与「响应结构不对」是两回事，重试同样输入也不会变好。
+  if (status === 400 || status === 422) return 'invalid_request'
   if (status === 404) return 'invalid_response'
   return 'invalid_response'
 }

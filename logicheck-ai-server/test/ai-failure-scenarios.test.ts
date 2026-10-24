@@ -439,3 +439,115 @@ test('PH5F12 OCR 未配置时错误码为 ocr_not_configured（图片单证）',
     db.close()
   }
 })
+
+test('PH5F13 请求被服务商拒绝（400，图片过小等）→ 明确归类为 invalid_request，不重试', async () => {
+  await withHarness(
+    () => ({
+      status: 400,
+      body: errorResponse(400, 'The image length and width do not meet the model restrictions.'),
+    }),
+    async (h, server) => {
+      await upload(h, 'invoice.pdf', INVOICE_PDF)
+      const doc = await waitForTerminal(h)
+      assert.equal(doc.status, 'failed')
+      assert.match(
+        doc.error!,
+        /^\[ai_invalid_request\]/,
+        `400 应归类为 invalid_request（而非 invalid_response）：${doc.error}`,
+      )
+      assert.ok(
+        !/返回内容不符合预期结构/.test(doc.error!),
+        '请求被拒不得被描述为「返回结构不对」',
+      )
+      assert.equal(server.requests.length, 1, '请求被拒不应重试（同一输入重试仍会被拒）')
+    },
+  )
+})
+
+test('PH5F14 EDI 报文走确定性段映射，不调用大模型', async () => {
+  // EDIFACT IFTMIN：字段位置由段限定符定义，用大模型反而引入不确定性
+  // 注意：段以 ' 终止（不是换行），这是 EDIFACT 标准
+  const edi = [
+    'UNB+UNOC:3+ACME+GBUY+240101:1200+001',
+    'UNH+1+IFTMIN:D:99B:UN',
+    'BGM+740+TO-0001+9',
+    'DTM+137:20240101:102',
+    'NAD+SU+ACME Trading Co.',
+    'NAD+CZ+Global Buyer GmbH',
+    'LIN+1++BT-4500',
+    'QTY+12:1000:PCE',
+    'MEA+AAE:125.5:KGM',
+    'UNT+9+1',
+    'UNZ+1+001',
+  ].join("'") + "'"
+
+  await withHarness(
+    () => ({ status: 200, body: chatResponse('should-not-be-called') }),
+    async (h, server) => {
+      const form = new FormData()
+      form.append(
+        'files',
+        new Blob([new Uint8Array(Buffer.from(edi, 'utf8'))], { type: 'text/plain' }),
+        'transport.edi',
+      )
+      const res = await fetch(`${h.baseUrl}/api/shipments/${h.shipmentId}/documents`, {
+        method: 'POST',
+        headers: { cookie: h.cookie },
+        body: form,
+      })
+      assert.equal(res.status, 201)
+
+      const doc = await waitForTerminal(h)
+      assert.equal(doc.status, 'parsed', `EDI 应解析成功：${doc.error}`)
+      assert.equal(server.requests.length, 0, 'EDI 不得调用大模型（结构化报文用段映射）')
+
+      const rows = h.db.all<{ field_key: string; value: string; source: string }>(
+        "SELECT field_key, value, source FROM extracted_fields WHERE field_key = 'quantity'",
+      )
+      assert.ok(rows.length > 0, 'EDI 数量字段应落库')
+      assert.equal(rows[0].value, '1000')
+      assert.equal(rows[0].source, 'deterministic', 'EDI 来源应标记为确定性提取')
+    },
+  )
+})
+
+test('PH5F15 AI 模式下 EDI 仍走确定性解析（不被路由到大模型）', async () => {
+  const edi = [
+    'UNB+UNOC:3+ACME+GBUY+240101:1200+001',
+    'UNH+1+IFTMIN:D:99B:UN',
+    'BGM+740+TO-0002+9',
+    'DTM+137:20240101:102',
+    'NAD+SU+ACME Trading Co.',
+    'NAD+CZ+Global Buyer GmbH',
+    'LIN+1++BT-4500',
+    'QTY+12:2500:PCE',
+    'UNT+8+1',
+    'UNZ+1+001',
+  ].join("'") + "'"
+
+  await withHarness(
+    () => ({ status: 200, body: chatResponse('should-not-be-called') }),
+    async (h, server) => {
+      const form = new FormData()
+      form.append(
+        'files',
+        new Blob([new Uint8Array(Buffer.from(edi, 'utf8'))], { type: 'text/plain' }),
+        'transport.edi',
+      )
+      await fetch(`${h.baseUrl}/api/shipments/${h.shipmentId}/documents`, {
+        method: 'POST',
+        headers: { cookie: h.cookie },
+        body: form,
+      })
+
+      const doc = await waitForTerminal(h)
+      assert.equal(doc.status, 'parsed', `AI 模式下 EDI 也应解析成功：${doc.error}`)
+      assert.equal(server.requests.length, 0, 'AI 模式下 EDI 也不得调用大模型')
+
+      const provider = h.db.get<{ extraction_provider: string | null }>(
+        'SELECT extraction_provider FROM documents LIMIT 1',
+      )
+      assert.equal(provider?.extraction_provider, 'deterministic', 'EDI 来源应为确定性提取')
+    },
+  )
+})

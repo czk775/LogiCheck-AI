@@ -136,13 +136,27 @@ async function dumpFailureContext(failedName) {
       }
       try {
         const list = await (await fetch('/api/shipments', { credentials: 'include' })).json()
-        const demo = (list.shipments || []).find(s => s.isDemo)
+        const shipments = list.shipments || []
+        const demo = shipments.find(s => s.isDemo)
         if (demo) {
           out.demoFindings = (demo.findings || []).map(f => f.status + '|' + f.title.slice(0, 24))
           out.demoDocCount = (demo.documents || []).length
           const res = await fetch('/api/shipments/' + demo.id + '/check-results', { credentials: 'include' })
           out.checkResults = (await res.json()).results?.map(r => r.ruleKey) ?? null
         }
+        // 非演示货物的单证真实状态（解析失败原因在这里）
+        const own = shipments.filter(s => !s.isDemo)
+        out.ownShipments = own.map(s => ({
+          id: s.id,
+          name: s.name,
+          docs: (s.documents || []).map(d => ({
+            file: d.fileName,
+            status: d.status,
+            error: (d.error || '').slice(0, 120),
+            provider: d.extractionProvider,
+            summary: (d.parseSummary || '').slice(0, 100),
+          })),
+        }))
       } catch (e) { out.apiError = String(e).slice(0, 120) }
       return out
     })()`, true)
@@ -164,7 +178,12 @@ async function waitFor(cdp, expr, timeout = 8000, label = '') {
     } catch {
       /* 页面切换瞬间可能取不到，继续轮询 */
     }
-    if (Date.now() - start > timeout) throw new Error(`waitFor 超时: ${label || expr}`)
+    if (Date.now() - start > timeout) {
+      // 超时时打印现场（单证真实状态 / 错误原因），否则只能靠猜
+      console.log(`⏱ waitFor 超时：${label || expr}`)
+      if (cdpRef) await dumpFailureContext(`waitFor:${label || expr}`)
+      throw new Error(`waitFor 超时: ${label || expr}`)
+    }
     await sleep(150)
   }
 }
@@ -591,53 +610,108 @@ async function main() {
     await setFileInput(cdp, [path.join(FIXTURES, 'test-invoice.png'), path.join(FIXTURES, 'test-bol.edi')])
     await waitFor(cdp, `document.querySelectorAll('[data-testid="doc-row"]').length === 2`, 8000, 'uploaded docs')
     check('I4 上传后出现 2 份单证', await cdp.eval(`document.querySelectorAll('[data-testid="doc-row"]').length === 2`))
+    // I6 上传反馈 toast：必须在上传后立即断言——
+    // toast 会自动消失，而真实 AI 模式下等解析完成要几十秒，那时早已过期
+    check('I6 上传反馈 toast', await cdp.eval(`Array.from(document.querySelectorAll('[data-testid="toast"]')).some(t => t.textContent.includes('2 份文件正在接收'))`))
     // 等待两份文档都到达终态（mock 状态机每份独立翻转，1.1–2.0s）
     if (API_MODE === 'mock') {
       await waitFor(cdp, `document.querySelectorAll('.chip.warn').length >= 2`, 8000, 'awaiting AI badge')
       check('I5 状态推进为「等待解析」（不伪造解析成功）', await cdp.eval(`document.querySelectorAll('.chip.warn').length >= 2 && !document.body.textContent.includes('已解析')`))
     } else {
-      // 真实模式：PNG → 明确失败（OCR 未接入）；IFTMIN EDI → 确定性解析成功
+      // 真实模式：
+      //   - AI 未接通（确定性提取 + OCR 未配置）→ PNG 明确失败，EDI 确定性解析成功
+      //   - AI 已接通（E2E_AI=1）→ PNG 走视觉 OCR 成功，EDI 走确定性解析
+      const aiOn = process.env.E2E_AI === '1'
       await waitFor(
         cdp,
-        `document.querySelector('[data-file-name="test-invoice.png"]')?.textContent.includes('处理失败') && document.querySelector('[data-file-name="test-bol.edi"]')?.textContent.includes('已解析')`,
-        12000,
+        aiOn
+          ? `document.querySelector('[data-file-name="test-invoice.png"]')?.textContent.includes('已解析') && document.querySelector('[data-file-name="test-bol.edi"]')?.textContent.includes('已解析')`
+          : `document.querySelector('[data-file-name="test-invoice.png"]')?.textContent.includes('处理失败') && document.querySelector('[data-file-name="test-bol.edi"]')?.textContent.includes('已解析')`,
+        // 真实 AI 模式：PNG 走「视觉 OCR + 大模型提取」两次调用，
+        // 单次调用超时上限 60s，总耗时可能超过 1 分钟
+        aiOn ? 150_000 : 12_000,
         'real terminal states',
       )
-      check('I5r PNG 诚实失败（OCR 未接入）+ IFTMIN EDI 确定性解析成功', await cdp.eval(`(() => {
-        const png = document.querySelector('[data-file-name="test-invoice.png"]')?.textContent ?? ''
-        const edi = document.querySelector('[data-file-name="test-bol.edi"]')?.textContent ?? ''
-        return png.includes('处理失败') && edi.includes('已解析')
-      })()`))
-      check('I5r2 工作台货物信息展示真实提取字段（数量 1000，来自 EDI 报文）', await cdp.eval(`document.querySelector('#profile')?.textContent.includes('1000')`))
-      // 第五阶段：单证卡片上直接展示失败原因（第五阶段新增）
       check(
-        'I5r3 单证卡片展示解析失败原因与处理建议',
+        aiOn
+          ? 'I5r PNG 视觉 OCR 成功 + IFTMIN EDI 确定性解析成功'
+          : 'I5r PNG 诚实失败（OCR 未接入）+ IFTMIN EDI 确定性解析成功',
         await cdp.eval(`(() => {
-          const row = document.querySelector('[data-file-name="test-invoice.png"]')
-          const err = row?.querySelector('[data-testid="doc-error"]')
-          if (!err) return false
-          const t = err.textContent ?? ''
-          return t.includes('图片识别未启用') && t.includes('AI_VISION_MODEL')
+          const png = document.querySelector('[data-file-name="test-invoice.png"]')?.textContent ?? ''
+          const edi = document.querySelector('[data-file-name="test-bol.edi"]')?.textContent ?? ''
+          return ${aiOn ? `png.includes('已解析')` : `png.includes('处理失败')`} && edi.includes('已解析')
         })()`),
       )
-      check(
-        'I5r4 失败单证提供「重新解析」按钮',
-        await cdp.eval(`!!document.querySelector('[data-file-name="test-invoice.png"] [data-testid="retry-doc"]')`),
-      )
+      check('I5r2 工作台货物信息展示真实提取字段（数量 1000，来自 EDI 报文）', await cdp.eval(`document.querySelector('#profile')?.textContent.includes('1000')`))
+      if (!aiOn) {
+        // 第五阶段：单证卡片上直接展示失败原因（AI 未接通时才有失败态）
+        check(
+          'I5r3 单证卡片展示解析失败原因与处理建议',
+          await cdp.eval(`(() => {
+            const row = document.querySelector('[data-file-name="test-invoice.png"]')
+            const err = row?.querySelector('[data-testid="doc-error"]')
+            if (!err) return false
+            const t = err.textContent ?? ''
+            return t.includes('图片识别未启用') && t.includes('AI_VISION_MODEL')
+          })()`),
+        )
+        check(
+          'I5r4 失败单证提供「重新解析」按钮',
+          await cdp.eval(`!!document.querySelector('[data-file-name="test-invoice.png"] [data-testid="retry-doc"]')`),
+        )
+      } else {
+        check(
+          'I5r5 AI 已接通：状态条显示「AI 已连接」',
+          await cdp.eval(`document.querySelector('[data-testid="ai-status-trigger"]')?.textContent.includes('AI 已连接')`),
+        )
+        check(
+          'I5r6 AI 已接通：详情浮层显示真实模型名',
+          await cdp.eval(`(() => {
+            document.querySelector('[data-testid="ai-status-trigger"]')?.click()
+            return true
+          })()`),
+        )
+        await waitFor(cdp, `document.querySelector('[data-testid="ai-status-panel"]')`, 5000, 'ai panel')
+        check(
+          'I5r6 AI 已接通：详情浮层显示真实模型名',
+          await cdp.eval(`(() => {
+            const t = document.querySelector('[data-testid="ai-status-panel"]')?.textContent ?? ''
+            return t.includes('qwen') && t.includes('提取模型')
+          })()`),
+        )
+        check(
+          'I5r7 AI 已接通：详情浮层不含密钥与额度字样',
+          await cdp.eval(`(() => {
+            const t = document.querySelector('[data-testid="ai-status-panel"]')?.textContent ?? ''
+            return !/sk-[a-z0-9]/i.test(t) && !/剩余额度|免费额度余额/.test(t)
+          })()`),
+        )
+        await cdp.eval(`document.querySelector('[data-testid="ai-status-trigger"]')?.click()`)
+      }
     }
-    check('I6 上传反馈 toast', await cdp.eval(`Array.from(document.querySelectorAll('[data-testid="toast"]')).some(t => t.textContent.includes('2 份文件正在接收'))`))
     // 预览图片
     await cdp.eval(`(() => { const row = document.querySelector('[data-file-name="test-invoice.png"]'); row.querySelector('.link-btn').click(); })()`)
     await waitFor(cdp, `document.querySelector('[data-testid="doc-drawer"] img.preview-img')`, 8000, 'image preview')
     check('I7 真实图片原件预览（blob URL）', await cdp.eval(`(() => { const img = document.querySelector('[data-testid="doc-drawer"] img.preview-img'); return !!img && img.src.startsWith('blob:') })()`))
-    check(
-      API_MODE === 'mock' ? 'I8 预览抽屉声明未 AI 解析' : 'I8r 预览抽屉展示真实失败原因（OCR 未接入）',
-      await cdp.eval(
-        API_MODE === 'mock'
-          ? `document.querySelector('[data-testid="doc-drawer"]')?.textContent.includes('原件预览（未 AI 解析）')`
-          : `(() => { const t = document.querySelector('[data-testid="doc-drawer"]')?.textContent ?? ''; return t.includes('处理失败原因') && t.includes('OCR') })()`,
-      ),
-    )
+    // 预览抽屉的说明文案：
+    //   - mock            → 声明「未 AI 解析」
+    //   - real + AI 未接通 → 展示真实失败原因（OCR 未接入）
+    //   - real + AI 已接通 → 展示真实解析摘要，不再声称失败
+    const drawerExpect = API_MODE === 'mock'
+      ? {
+        name: 'I8 预览抽屉声明未 AI 解析',
+        expr: `document.querySelector('[data-testid="doc-drawer"]')?.textContent.includes('原件预览（未 AI 解析）')`,
+      }
+      : process.env.E2E_AI === '1'
+        ? {
+          name: 'I8r 预览抽屉展示真实解析摘要（AI 已接通）',
+          expr: `(() => { const t = document.querySelector('[data-testid="doc-drawer"]')?.textContent ?? ''; return t.includes('解析摘要') && !t.includes('处理失败原因') })()`,
+        }
+        : {
+          name: 'I8r 预览抽屉展示真实失败原因（OCR 未接入）',
+          expr: `(() => { const t = document.querySelector('[data-testid="doc-drawer"]')?.textContent ?? ''; return t.includes('处理失败原因') && t.includes('OCR') })()`,
+        }
+    check(drawerExpect.name, await cdp.eval(drawerExpect.expr))
     await cdp.eval(`document.querySelector('[data-testid="doc-drawer"] .close').click()`)
     // 预览 EDI 文本
     await cdp.eval(`(() => { const row = document.querySelector('[data-file-name="test-bol.edi"]'); row.querySelector('.link-btn').click(); })()`)

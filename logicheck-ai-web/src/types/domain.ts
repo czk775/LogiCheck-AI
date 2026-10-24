@@ -78,11 +78,15 @@ export interface ShipmentDocument {
   fieldMeta?: Record<string, FieldMeta>
   /** 解析摘要（可解释：提取了几个字段、单证类型、处理说明） */
   parseSummary?: string
+  /** 字段提取来源：deterministic / ai / ocr+ai */
+  extractionProvider?: string
+  /** 产出本次字段的模型名（AI 链路才有） */
+  extractionModel?: string
 }
 
 /** 字段级溯源信息（与后端 extracted_fields 对齐） */
 export interface FieldMeta {
-  status: 'extracted' | 'low_confidence' | 'missing' | 'unavailable'
+  status: 'extracted' | 'low_confidence' | 'missing' | 'unavailable' | 'unverified'
   confidence: number
   normalized: string
   page: number | null

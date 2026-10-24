@@ -2,6 +2,7 @@ import { Icon } from '../../components/Icon'
 import { Drawer } from '../../components/Drawer'
 import { useStore } from '../../store/AppStore'
 import { apiMode } from '../../services/api'
+import { describeExtractionSource } from '../../services/domain/aiStatus'
 import { FIELD_LABELS } from '../../types/domain'
 import type { Shipment } from '../../types/domain'
 
@@ -27,6 +28,13 @@ export function ProfileDrawer({ shipment }: { shipment: Shipment }) {
 
   const valueOf = (k: string): string => (real ? merged.get(k)?.value ?? '' : shipment.profile[k] ?? '')
 
+  // 来源说明按实际提取方式给出
+  const sourceProvider =
+    shipment.documents.find((d) => d.extractionProvider === 'ocr+ai')?.extractionProvider ??
+    shipment.documents.find((d) => d.extractionProvider === 'ai')?.extractionProvider ??
+    shipment.documents.find((d) => d.extractionProvider)?.extractionProvider
+  const sourceModel = shipment.documents.find((d) => d.extractionModel)?.extractionModel
+
   return (
     <Drawer
       title="货物信息 · 完整字段"
@@ -36,7 +44,7 @@ export function ProfileDrawer({ shipment }: { shipment: Shipment }) {
     >
       <p className="detail-paragraph">
         {real
-          ? '字段由服务端从各单证确定性提取（PDF 文本层 / EDIFACT 段映射）并汇总；缺失字段不以默认值填充，冲突项需根据原始单证人工复核。'
+          ? describeExtractionSource(sourceProvider, sourceModel) + '缺失字段不以默认值填充，冲突项需根据原始单证人工复核。'
           : 'AI 将不同文件的字段汇总到统一货物对象。此处是演示提取结果，冲突项必须根据原始单证人工复核。'}
       </p>
       <div className="detail-list">

@@ -19,6 +19,7 @@ import { FileStorage } from '../documents/storage.ts'
 import { PdfParseError, extractPdfText } from './pdf/text.ts'
 import { EdiParseError, assertSupportedType, parseEdifact } from './edi/parse.ts'
 import { ProviderError, type ExtractionProvider, type OcrProvider } from './providers/types.ts'
+import { DeterministicExtractionProvider } from './providers/deterministic.ts'
 
 interface DocumentRow {
   id: string
@@ -33,6 +34,15 @@ interface DocumentRow {
 }
 
 export class ParsePipeline {
+  /**
+   * EDI 专用的确定性提取器。
+   *
+   * 为什么 EDI 不走大模型：EDIFACT 是结构化报文，字段位置由段限定符
+   * 精确定义（如 QTY+47:1000:PCE），确定性段映射既更准、又零成本、
+   * 可复算可审计。把它交给大模型反而会引入不必要的不确定性。
+   */
+  private readonly ediExtraction: ExtractionProvider = new DeterministicExtractionProvider()
+
   constructor(
     private readonly db: Db,
     private readonly storage: FileStorage,
@@ -119,7 +129,8 @@ export class ParsePipeline {
       if (doc.format === 'edi') {
         const message = parseEdifact(text)
         assertSupportedType(message)
-        const extracted = await this.extraction.extract({ format: 'edi', fileName: doc.file_name, message })
+        // EDI 一律走确定性段映射（与大模型无关）
+        const extracted = await this.ediExtraction.extract({ format: 'edi', fileName: doc.file_name, message })
         return { output: extracted, source: 'deterministic', ocrUsed: false }
       }
       // 纯文本：按 PDF 文本层同构处理（单页）

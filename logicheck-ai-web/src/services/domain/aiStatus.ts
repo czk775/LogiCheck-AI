@@ -79,9 +79,83 @@ export function toAiStatusView(status: AiStatus | null, mode: 'real' | 'mock'): 
   }
 }
 
+/* ---------- 字段来源说明 ---------- */
+
+/**
+ * 单证字段来源说明（按后端 extraction_provider 如实描述）。
+ *
+ * 诚实边界：AI 接通后不能继续写「确定性解析」——
+ * 那会让用户以为字段来自规则匹配，而非大模型理解。
+ */
+export function describeExtractionSource(
+  provider: string | undefined,
+  model?: string | undefined,
+): string {
+  const modelSuffix = model ? `（模型 ${model}）` : ''
+  switch (provider) {
+    case 'ai':
+      return `字段由大模型从单证原文中提取${modelSuffix}，每条结果均经原文引用核验后才被采信。`
+    case 'ocr+ai':
+      return `扫描件/图片先经视觉识别，再由大模型提取字段${modelSuffix}，每条结果均经原文引用核验后才被采信。`
+    case 'deterministic':
+      return '字段由服务端确定性规则提取（PDF 文本层 / EDIFACT 段映射），全程可追溯。'
+    case 'manual':
+      return '字段由人工修正并留痕，原始单证内容不变。'
+    default:
+      return '字段来自服务端解析结果；缺失项不以默认值填充。'
+  }
+}
+
 /* ---------- 解析失败原因映射 ---------- */
 
-/** 后端错误码 → 用户可读文案与建议动作 */
+/**
+ * 底层模型调用错误（对应后端 LlmErrorCode）。
+ * 后端会加 `ai_` / `ocr_` 前缀落库，这里按前缀去掉后复用同一套文案。
+ */
+const LLM_ERROR_META: Record<string, { title: string; advice: string }> = {
+  auth_failed: {
+    title: 'API Key 无效',
+    advice: '检查 Key 是否复制完整、是否属于当前接入地址所在地域',
+  },
+  rate_limited: {
+    title: '调用过于频繁，已被限流',
+    advice: '稍等片刻后点击重新解析',
+  },
+  quota_exceeded: {
+    title: 'AI 额度不足或账户欠费',
+    advice: '请在百炼控制台确认额度与账单，或切换其他模型',
+  },
+  timeout: {
+    title: '模型响应超时',
+    advice: '单证页数较多时可能超时，可点击重新解析重试',
+  },
+  service_unavailable: {
+    title: '模型服务返回异常',
+    advice: '这是服务端临时故障，稍后点击重新解析',
+  },
+  network_error: {
+    title: '网络异常，未能连接模型服务',
+    advice: '检查网络连通性后点击重新解析',
+  },
+  invalid_json: {
+    title: '模型输出格式无法解析',
+    advice: '可点击重新解析；若持续失败请更换模型',
+  },
+  invalid_response: {
+    title: '模型返回内容不符合预期结构',
+    advice: '可点击重新解析；若持续失败请更换模型',
+  },
+  invalid_request: {
+    title: '模型服务拒绝了本次请求',
+    advice: '该单证可能不满足模型要求（图片过小、格式不支持等），请更换或处理后重试',
+  },
+  not_configured: {
+    title: 'AI 服务未配置',
+    advice: '请在服务端 .env 配置 API Key 与模型名后重试',
+  },
+}
+
+/** 单证/文件层错误码 → 用户可读文案与建议动作 */
 const DOC_ERROR_META: Record<string, { title: string; advice: string }> = {
   ai_not_connected: {
     title: 'AI 服务未接通',
@@ -91,37 +165,25 @@ const DOC_ERROR_META: Record<string, { title: string; advice: string }> = {
     title: 'AI 服务未配置',
     advice: '请在服务端 .env 配置 API Key 与模型名后重试',
   },
-  ai_auth_failed: {
-    title: 'API Key 无效',
-    advice: '检查 Key 是否复制完整、是否属于当前接入地址所在地域',
+  ai_no_text: {
+    title: '单证没有可送入模型的文本',
+    advice: '该文件可能为纯图片，请配置视觉模型或上传含文本层的 PDF',
   },
-  ai_rate_limited: {
-    title: '调用过于频繁，已被限流',
-    advice: '稍等片刻后点击重新解析',
-  },
-  ai_quota_exceeded: {
-    title: '免费额度已用完',
-    advice: '请在百炼控制台确认额度，或切换其他模型',
-  },
-  ai_timeout: {
-    title: '模型响应超时',
-    advice: '单证页数较多时可能超时，可点击重新解析重试',
-  },
-  ai_network_error: {
-    title: '网络异常，未能连接模型服务',
-    advice: '检查网络连通性后点击重新解析',
-  },
-  ai_server_error: {
-    title: '模型服务返回异常',
-    advice: '这是服务端临时故障，稍后点击重新解析',
-  },
-  ai_invalid_json: {
-    title: '模型输出格式无法解析',
-    advice: '可点击重新解析；若持续失败请更换模型',
+  ai_unknown_error: {
+    title: '调用大模型失败',
+    advice: '可点击重新解析重试；若持续失败请查看服务端日志',
   },
   ocr_not_configured: {
     title: '图片识别未启用',
     advice: '请在服务端 .env 配置视觉模型（AI_VISION_MODEL）',
+  },
+  ocr_empty: {
+    title: '图片识别结果为空',
+    advice: '图片可能过暗、过小或并非单证，可换用更清晰的原件重试',
+  },
+  ocr_unknown_error: {
+    title: '调用视觉模型失败',
+    advice: '可点击重新解析重试；若持续失败请查看服务端日志',
   },
   no_text_layer: {
     title: 'PDF 无文本层，疑似扫描件',
@@ -131,10 +193,43 @@ const DOC_ERROR_META: Record<string, { title: string; advice: string }> = {
     title: '暂不支持该 EDIFACT 消息类型',
     advice: '目前支持 INVOIC / DESADV / IFTMIN',
   },
+  not_pdf: {
+    title: '文件不是有效的 PDF',
+    advice: '请重新导出或上传正确的 PDF 文件',
+  },
+  encrypted_pdf: {
+    title: 'PDF 已加密',
+    advice: '请提供未加密的 PDF 文件（系统不绕过口令）',
+  },
+  unsupported_structure: {
+    title: 'PDF 结构无法解析',
+    advice: '该 PDF 可能已损坏，请重新导出后上传',
+  },
   file_missing: {
     title: '文件在存储中缺失',
     advice: '请重新上传该单证',
   },
+}
+
+/** 前缀区分：视觉链路（OCR）与文本链路（AI 提取） */
+const ERROR_PREFIX_LABEL: Record<string, string> = {
+  ai: '',
+  ocr: '图片识别 · ',
+}
+
+/**
+ * 按错误码查文案：
+ * 1. 先查具体单证错误码（DOC_ERROR_META）
+ * 2. 再按 ai_/ocr_ 前缀归入底层模型错误（LLM_ERROR_META）
+ */
+function lookupErrorMeta(code: string): { title: string; advice: string } | undefined {
+  const direct = DOC_ERROR_META[code]
+  if (direct) return direct
+  const m = code.match(/^(ai|ocr)_(.+)$/)
+  if (!m) return undefined
+  const base = LLM_ERROR_META[m[2]]
+  if (!base) return undefined
+  return { title: `${ERROR_PREFIX_LABEL[m[1]] ?? ''}${base.title}`, advice: base.advice }
 }
 
 export interface DocErrorView {
@@ -172,22 +267,35 @@ export function toDocErrorView(rawError: string | null | undefined): DocErrorVie
   if (!rawError || !rawError.trim()) return null
   const raw = rawError.trim()
   const code = extractErrorCode(raw)
-  const meta = code ? DOC_ERROR_META[code] : undefined
+  const meta = code ? lookupErrorMeta(code) : undefined
   if (!meta) {
     return { title: '解析失败', advice: '可点击重新解析重试', raw, known: false }
   }
   return { title: meta.title, advice: meta.advice, raw, known: true }
 }
 
-/** 从错误码判断是否值得提示「重新解析」（配额/鉴权类问题重试无意义） */
+/**
+ * 从错误码判断是否值得提示「重新解析」。
+ *
+ * 配额不足、鉴权失败、配置缺失、文件本身有问题——重试都不会变好，
+ * 这类情况下按钮应禁用，把用户的注意力引到「先改配置 / 重新上传」。
+ */
 export function isRetryWorthwhile(code: string | null): boolean {
   if (!code) return true
-  return ![
-    'ai_auth_failed',
-    'ai_quota_exceeded',
-    'ai_not_connected',
-    'ai_not_configured',
-    'ocr_not_configured',
-    'unsupported_message_type',
-  ].includes(code)
+  // 先归一化到底层语义（去掉 ai_ / ocr_ 前缀），保证两条链路判定一致
+  const semantic = code.replace(/^(ai|ocr)_/, '')
+  if (
+    ['auth_failed', 'quota_exceeded', 'not_configured', 'not_connected'].includes(semantic)
+  ) {
+    return false
+  }
+  // 请求被服务商拒绝（图片过小 / 格式不支持）：同一份输入重试还是会被拒
+  if (semantic === 'invalid_request') return false
+  // 文件/报文本身的问题，重试无意义
+  if (
+    ['unsupported_message_type', 'not_pdf', 'encrypted_pdf', 'unsupported_structure'].includes(code)
+  ) {
+    return false
+  }
+  return true
 }

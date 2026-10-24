@@ -3,6 +3,7 @@ import { Drawer } from '../../components/Drawer'
 import { useStore } from '../../store/AppStore'
 import { docStatusMeta } from '../../services/domain/shipmentStatus'
 import { apiMode } from '../../services/api'
+import { describeExtractionSource } from '../../services/domain/aiStatus'
 import { EvidencePreview } from '../workspace/EvidencePreview'
 import { formatFileSize, formatTime } from '../../utils/format'
 import type { ShipmentDocument } from '../../types/domain'
@@ -41,7 +42,7 @@ export function DocDrawer({ doc }: { doc: ShipmentDocument }) {
         {doc.isDemo
           ? '这是专为 UI 评审制作的模拟单证，不是 PDF 原件。'
           : real
-            ? '这是用户真实上传的文件预览；字段由服务端确定性解析提取（PDF 文本层 / EDIFACT），全程可追溯。'
+            ? '这是用户真实上传的文件预览；' + describeExtractionSource(doc.extractionProvider, doc.extractionModel)
             : '这是用户真实上传的文件预览，不包含虚构的识别字段；真实 AI 解析留待后端集成。'}
       </div>
       <p className="text-note" style={{ marginTop: 12 }}>

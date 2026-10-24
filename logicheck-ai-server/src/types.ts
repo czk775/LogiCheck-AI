@@ -26,17 +26,21 @@ export interface ShipmentDocument {
   fieldMeta?: Record<string, FieldMeta>
   /** 阶段二：解析产物摘要（可解释） */
   parseSummary?: string
+  /** 字段提取来源：deterministic / ai / ocr+ai（第五阶段起可为空） */
+  extractionProvider?: string
+  /** 产出本次字段的模型名（AI 链路才有） */
+  extractionModel?: string
 }
 
 /** 提取字段的溯源元数据（阶段二 Schema） */
 export interface FieldMeta {
-  /** extracted / low_confidence / missing / unavailable */
-  status: 'extracted' | 'low_confidence' | 'missing' | 'unavailable'
+  /** extracted / low_confidence / missing / unavailable / unverified */
+  status: 'extracted' | 'low_confidence' | 'missing' | 'unavailable' | 'unverified'
   confidence: number
   normalized: string
   page: number | null
   position: string | null
-  /** 提取来源：deterministic / ai / manual / demo */
+  /** 提取来源：deterministic / ai / ocr+ai / manual / demo */
   source: string
 }
 

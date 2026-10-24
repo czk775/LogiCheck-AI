@@ -10,7 +10,7 @@
  * ============================================================ */
 
 import assert from 'node:assert/strict'
-import { toAiStatusView, toDocErrorView, isRetryWorthwhile, extractErrorCode } from '../src/services/domain/aiStatus.ts'
+import { toAiStatusView, toDocErrorView, isRetryWorthwhile, extractErrorCode, describeExtractionSource } from '../src/services/domain/aiStatus.ts'
 
 let passed = 0
 function check(name: string, fn: () => void): void {
@@ -119,6 +119,35 @@ check('状态为 null → 提示未知而非谎报已连接', () => {
   assert.notEqual(v.label, 'AI 已连接')
 })
 
+console.log('\n[字段来源说明]')
+
+check('AI 链路 → 如实说明来自大模型并经引用核验', () => {
+  const text = describeExtractionSource('ai', 'qwen3.8-flash')
+  assert.ok(text.includes('大模型'), '应说明来自大模型')
+  assert.ok(text.includes('qwen3.8-flash'), '应带上模型名')
+  assert.ok(text.includes('核验'), '应说明引用核验')
+  assert.ok(!text.includes('确定性'), 'AI 链路不得声称确定性解析')
+})
+
+check('OCR+AI 链路 → 说明先识别图片再提取', () => {
+  const text = describeExtractionSource('ocr+ai', 'qwen3.8-omni-flash')
+  assert.ok(text.includes('视觉识别'), '应说明视觉识别')
+  assert.ok(!text.includes('确定性'), '不得声称确定性解析')
+})
+
+check('确定性链路 → 保留原有说法', () => {
+  const text = describeExtractionSource('deterministic')
+  assert.ok(text.includes('确定性'))
+  assert.ok(!text.includes('大模型'), '确定性链路不得声称大模型')
+})
+
+check('来源未知 → 不编造，给中性说明', () => {
+  const text = describeExtractionSource(undefined)
+  assert.ok(text.length > 0)
+  assert.ok(!text.includes('大模型'))
+  assert.ok(!text.includes('确定性'))
+})
+
 console.log('\n[解析失败原因映射]')
 
 check('鉴权失败 → 明确提示 Key 无效', () => {
@@ -133,10 +162,11 @@ check('限流 → 提示稍后重试', () => {
   assert.equal(v.title, '调用过于频繁，已被限流')
 })
 
-check('额度用尽 → 提示去控制台确认', () => {
-  const v = toDocErrorView('ai_quota_exceeded: 免费额度已用完')!
-  assert.equal(v.title, '免费额度已用完')
+check('额度用尽 → 提示去控制台确认（不得称"免费额度"）', () => {
+  const v = toDocErrorView('[ai_quota_exceeded] AI 服务额度不足或账户欠费')!
+  assert.equal(v.title, 'AI 额度不足或账户欠费')
   assert.ok(v.advice.includes('控制台'))
+  assert.ok(!/免费额度/.test(v.title + v.advice), '限流/额度不得被称作免费额度余额')
 })
 
 check('超时 → 提示可重试', () => {
@@ -144,10 +174,53 @@ check('超时 → 提示可重试', () => {
   assert.equal(v.title, '模型响应超时')
 })
 
+check('模型服务 5xx → 映射为「模型服务返回异常」（后端码是 service_unavailable）', () => {
+  const v = toDocErrorView('[ai_service_unavailable] AI 服务暂时不可用')!
+  assert.equal(v.title, '模型服务返回异常')
+  assert.equal(v.known, true)
+})
+
+check('OCR 链路错误 → 标题带「图片识别」前缀', () => {
+  const v = toDocErrorView('[ocr_rate_limited] AI 服务限流')!
+  assert.equal(v.title, '图片识别 · 调用过于频繁，已被限流')
+})
+
+check('OCR 链路鉴权失败 → 同样能映射（此前完全缺失）', () => {
+  const v = toDocErrorView('[ocr_auth_failed] AI 服务鉴权失败')!
+  assert.equal(v.title, '图片识别 · API Key 无效')
+  assert.equal(v.known, true)
+})
+
+check('OCR 识别结果为空 → 明确说明', () => {
+  const v = toDocErrorView('[ocr_empty] 扫描件识别结果为空')!
+  assert.equal(v.title, '图片识别结果为空')
+  assert.equal(v.known, true)
+})
+
+check('PDF 结构类错误 → 已知错误且不建议重试', () => {
+  for (const code of ['not_pdf', 'encrypted_pdf', 'unsupported_structure']) {
+    const v = toDocErrorView(`[${code}] 解析失败`)!
+    assert.equal(v.known, true, `${code} 应为已知错误`)
+    assert.equal(isRetryWorthwhile(code), false, `${code} 重试无意义`)
+  }
+})
+
 check('OCR 未配置 → 指向 AI_VISION_MODEL', () => {
   const v = toDocErrorView('ocr_not_configured: 视觉模型未配置')!
   assert.equal(v.title, '图片识别未启用')
   assert.ok(v.advice.includes('AI_VISION_MODEL'))
+})
+
+check('请求被服务商拒绝（400）→ 明确归类，不说成"返回结构不对"', () => {
+  const v = toDocErrorView('[ai_invalid_request] AI 服务拒绝了本次请求')!
+  assert.equal(v.title, '模型服务拒绝了本次请求')
+  assert.equal(v.known, true)
+  assert.ok(!/返回结构/.test(v.title + v.advice), '不得描述为响应结构问题')
+})
+
+check('OCR 链路请求被拒 → 同样能映射', () => {
+  const v = toDocErrorView('[ocr_invalid_request] 请求被拒')!
+  assert.equal(v.title, '图片识别 · 模型服务拒绝了本次请求')
 })
 
 check('未知错误码 → 不编造原因，仅给通用建议', () => {
@@ -189,10 +262,22 @@ check('配额/鉴权类问题 → 重试无意义', () => {
   assert.equal(isRetryWorthwhile('ocr_not_configured'), false)
 })
 
+check('OCR 链路的配额/鉴权类问题 → 同样禁用重试', () => {
+  assert.equal(isRetryWorthwhile('ocr_quota_exceeded'), false)
+  assert.equal(isRetryWorthwhile('ocr_auth_failed'), false)
+})
+
 check('超时/限流/格式类 → 值得重试', () => {
   assert.equal(isRetryWorthwhile('ai_timeout'), true)
   assert.equal(isRetryWorthwhile('ai_rate_limited'), true)
   assert.equal(isRetryWorthwhile('ai_invalid_json'), true)
+  assert.equal(isRetryWorthwhile('ocr_timeout'), true)
+  assert.equal(isRetryWorthwhile('ocr_empty'), true)
+})
+
+check('请求被服务商拒绝 → 重试无意义（同一输入仍会被拒）', () => {
+  assert.equal(isRetryWorthwhile('ai_invalid_request'), false)
+  assert.equal(isRetryWorthwhile('ocr_invalid_request'), false)
 })
 
 console.log(`\n${process.exitCode ? '✗ 存在失败用例' : `✓ 全部通过（${passed} 条）`}\n`)

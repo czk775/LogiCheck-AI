@@ -3,12 +3,14 @@ import { Icon } from '../../components/Icon'
 import { Button } from '../../components/Button'
 import { Modal } from '../../components/Modal'
 import { useStore } from '../../store/AppStore'
+import { apiMode } from '../../services/api'
 import { FIELD_LABELS } from '../../types/domain'
 
 /** 修正提取字段弹窗 —— 与原型 profile-edit 一致 */
 export function FieldEditModal({ fieldKey, sourceDocumentId }: { fieldKey: string; sourceDocumentId?: string }) {
   const { activeShipment, closeModal, updateField } = useStore()
   const s = activeShipment!
+  const real = apiMode === 'real'
 
   const sourceDocs = useMemo(
     () => s.documents.filter((d) => Object.hasOwn(d.fields, fieldKey)),
@@ -23,18 +25,22 @@ export function FieldEditModal({ fieldKey, sourceDocumentId }: { fieldKey: strin
     setValue(doc?.fields[fieldKey] ?? s.profile[fieldKey] ?? '')
   }, [selected, s.documents, s.profile, fieldKey])
 
-  if (!s.isDemo) {
+  const label = FIELD_LABELS[fieldKey] ?? fieldKey
+
+  // 真实货物但没有任何来源单证提供该字段：无处可改，如实说明而非假装可编辑
+  if (real && !sourceDocs.length) {
     return (
       <Modal title="编辑字段" onClose={closeModal} testId="field-edit-modal">
-        <p>当前新货物没有真实 AI 提取字段；请在后端接入后使用证据驱动的字段修正功能。</p>
+        <p>
+          没有单证提取到「{label}」这一字段，因此无法修正。请先上传包含该字段的单证，
+          或等待解析完成后重试。
+        </p>
         <Button variant="primary" onClick={closeModal}>
           知道了
         </Button>
       </Modal>
     )
   }
-
-  const label = FIELD_LABELS[fieldKey] ?? fieldKey
 
   return (
     <Modal
@@ -56,7 +62,11 @@ export function FieldEditModal({ fieldKey, sourceDocumentId }: { fieldKey: strin
         </>
       }
     >
-      <p>仅修改 AI 提取层数据，不会覆盖原始单证。修改后需要重新检查，系统仍保留原值和操作记录。</p>
+      <p>
+        {real
+          ? '仅修改结构化提取结果，不会覆盖原始单证。修改后需要重新检查，系统仍保留原值和操作记录。'
+          : '仅修改 AI 提取层数据，不会覆盖原始单证。修改后需要重新检查，系统仍保留原值和操作记录。'}
+      </p>
       <div className="form-row">
         <label htmlFor="source-doc">来源单证</label>
         <select
@@ -91,7 +101,9 @@ export function FieldEditModal({ fieldKey, sourceDocumentId }: { fieldKey: strin
       </div>
       <div className="prototype-note">
         <Icon name="info" size="sm" />
-        演示货物中的字段值为模拟提取结果，可用于验证编辑、留痕与重新核验。
+        {real
+          ? '人工修正会写入审计记录，原始单证内容保持不变。'
+          : '演示货物中的字段值为模拟提取结果，可用于验证编辑、留痕与重新核验。'}
       </div>
     </Modal>
   )

@@ -41,6 +41,8 @@ interface DocumentRow {
   created_at: string
   updated_at: string
   parse_summary: string | null
+  extraction_provider: string | null
+  extraction_model: string | null
 }
 
 interface FieldRow {
@@ -122,8 +124,9 @@ export function shipmentRowToAggregate(db: Db, row: ShipmentRow): Shipment {
         entry.original = { ...(entry.original ?? {}), [f.field_key]: f.original_value }
       }
       const status = (f.status ?? 'extracted') as FieldMeta['status']
-      // missing / unavailable 不进入 fields 值映射（值可能为空串）
-      if (status !== 'missing' && status !== 'unavailable') {
+      // missing / unavailable / unverified 不进入 fields 值映射
+      // （missing/unavailable 是「没有值」；unverified 是「模型给了但无法核实来源」，值不可采信）
+      if (status !== 'missing' && status !== 'unavailable' && status !== 'unverified') {
         entry.fields[f.field_key] = f.value
       }
       entry.meta[f.field_key] = {
@@ -156,6 +159,8 @@ export function shipmentRowToAggregate(db: Db, row: ShipmentRow): Shipment {
     if (f?.original && Object.keys(f.original).length) doc.originalFields = { ...f.original }
     if (f && Object.keys(f.meta).length) doc.fieldMeta = { ...f.meta }
     if (d.parse_summary) doc.parseSummary = d.parse_summary
+    if (d.extraction_provider) doc.extractionProvider = d.extraction_provider
+    if (d.extraction_model) doc.extractionModel = d.extraction_model
     return doc
   })
 
