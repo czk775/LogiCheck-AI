@@ -67,13 +67,15 @@ const baseUrl = (env.AI_BASE_URL?.trim() || 'https://dashscope.aliyuncs.com/comp
 const visionModel = env.AI_VISION_MODEL?.trim()
 const timeoutMs = Number(env.AI_TIMEOUT_MS || 60_000)
 const maxRetries = Number(env.AI_MAX_RETRIES ?? 2)
+const maxOutputTokens = Number(env.AI_MAX_OUTPUT_TOKENS || 4096)
 
 console.log('接入地址：', baseUrl)
 console.log('提取模型：', model)
 console.log('视觉模型：', visionModel || '（复用提取模型）')
+console.log('输出上限：', maxOutputTokens, 'token/次（额度护栏）')
 console.log('密钥状态：已配置（' + apiKey.length + ' 字符，不显示内容）\n')
 
-const client = new LlmClient({ apiKey, baseUrl, model, timeoutMs, maxRetries })
+const client = new LlmClient({ apiKey, baseUrl, model, timeoutMs, maxRetries, maxOutputTokens })
 
 const started = Date.now()
 try {
@@ -96,6 +98,10 @@ try {
   console.log('耗时：    ', elapsed, 'ms')
   if (res.usage) {
     console.log('token：   ', JSON.stringify(res.usage))
+    const total = res.usage.totalTokens ?? 0
+    if (total > 0) {
+      console.log('额度参考：新人免费额度约 100 万 token/模型，本次自检约占 ' + (total / 10000).toFixed(2) + '%')
+    }
   }
   console.log('返回内容：', res.content.slice(0, 600))
   console.log('\n下一步：')

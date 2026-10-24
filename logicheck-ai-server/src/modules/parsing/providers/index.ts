@@ -43,6 +43,7 @@ export function buildProviders(config: AppConfig): ProviderRegistry {
           model: ai.model,
           timeoutMs: ai.timeoutMs,
           maxRetries: ai.maxRetries,
+          maxOutputTokens: ai.maxOutputTokens,
         }),
         maxPages: ai.maxPages,
       })
@@ -71,6 +72,7 @@ export function buildProviders(config: AppConfig): ProviderRegistry {
         model: visionModel,
         timeoutMs: ai.timeoutMs,
         maxRetries: ai.maxRetries,
+        maxOutputTokens: ai.maxOutputTokens,
       }),
       maxPages: ai.maxPages,
     })

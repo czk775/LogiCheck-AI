@@ -76,7 +76,16 @@ export interface LlmConfig {
   timeoutMs: number
   /** 失败重试次数（不含首次） */
   maxRetries: number
+  /**
+   * 单次响应输出的 token 上限。
+   * 不设限会让模型自由输出，最坏情况一次调用烧掉大量额度，
+   * 因此即使调用方不配置也必须有安全默认值。
+   */
+  maxOutputTokens?: number
 }
+
+/** 输出上限默认值：提取任务真实需要仅数百 token，此值留足余量 */
+export const DEFAULT_MAX_OUTPUT_TOKENS = 4096
 
 export type LlmContentPart =
   | { type: 'text'; text: string }
@@ -158,6 +167,10 @@ export class LlmClient {
       model: this.config.model,
       messages,
       stream: false,
+      // 额度护栏：限制单次输出长度，避免一次失控调用烧穿免费额度
+      max_tokens: this.config.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+      // 提取任务要求同输入同输出，固定温度以保证可复现
+      temperature: 0,
     }
 
     let lastError: LlmError | null = null

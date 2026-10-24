@@ -27,6 +27,8 @@ const schema = z.object({
   AI_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
   AI_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(2),
   AI_MAX_PAGES: z.coerce.number().int().positive().default(8),
+  /* 单次响应输出 token 上限：额度护栏。免费额度有限，输出必须封顶 */
+  AI_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().max(32_000).default(4_096),
   /* 可选 SMTP（全部留空 → 本地发件箱模式） */
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().optional(),
@@ -52,6 +54,8 @@ export interface AiConfig {
   maxRetries: number
   /** 单份单证最多送入模型的页数（超出部分截断，避免额度失控） */
   maxPages: number
+  /** 单次响应输出 token 上限（额度护栏） */
+  maxOutputTokens: number
   /** 对外可安全展示的描述（不含密钥） */
   describe(): { baseUrl: string; model: string; visionModel: string | null; configured: true }
 }
@@ -92,6 +96,7 @@ function buildAiConfig(input: {
   timeoutMs: number
   maxRetries: number
   maxPages: number
+  maxOutputTokens: number
 }): AiConfig {
   const config: AiConfig = {
     baseUrl: input.baseUrl,
@@ -100,6 +105,7 @@ function buildAiConfig(input: {
     timeoutMs: input.timeoutMs,
     maxRetries: input.maxRetries,
     maxPages: input.maxPages,
+    maxOutputTokens: input.maxOutputTokens,
     describe(): { baseUrl: string; model: string; visionModel: string | null; configured: true } {
       return {
         baseUrl: config.baseUrl,
@@ -136,6 +142,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv): AppConfig {
           timeoutMs: parsed.AI_TIMEOUT_MS,
           maxRetries: parsed.AI_MAX_RETRIES,
           maxPages: parsed.AI_MAX_PAGES,
+          maxOutputTokens: parsed.AI_MAX_OUTPUT_TOKENS,
         })
       : null
 
