@@ -92,6 +92,7 @@ export async function createTestEnv(): Promise<TestEnv> {
     sessionTtlDays: 7,
     corsOrigin: 'http://localhost:5173',
     extractionProvider: 'deterministic',
+    ai: null,
     smtp: null,
   }
 

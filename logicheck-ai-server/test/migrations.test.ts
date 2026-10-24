@@ -28,10 +28,10 @@ test('M1 新环境：从零应用全部迁移', () => {
   const db = openDatabase(path)
   try {
     const ran = migrate(db)
-    assert.deepEqual(ran, ['001_initial', '002_parsing', '003_checking'])
+    assert.deepEqual(ran, ['001_initial', '002_parsing', '003_checking', '004_ai'])
     assert.deepEqual(
       appliedMigrations(db).map((m) => m.version),
-      ['001_initial', '002_parsing', '003_checking'],
+      ['001_initial', '002_parsing', '003_checking', '004_ai'],
     )
     // 重复执行：无新迁移
     assert.deepEqual(migrate(db), [])
@@ -71,9 +71,9 @@ test('M2 旧库升级：001 的既有数据保留，002 新列就位', () => {
       'fld-legacy', 'doc-legacy', 'SHP-LEGACY', '2026-08-01T00:00:00.000Z',
     )
 
-    // 升级：只应应用 002 与 003
+    // 升级：只应应用 002、003、004
     const ran = migrate(db)
-    assert.deepEqual(ran, ['002_parsing', '003_checking'], '已应用过 001 的库只应跑后续迁移')
+    assert.deepEqual(ran, ['002_parsing', '003_checking', '004_ai'], '已应用过 001 的库只应跑后续迁移')
 
     // 旧数据完整保留
     const legacy = db.get<{ value: string; source: string; status: string }>(
@@ -117,6 +117,28 @@ test('M2 旧库升级：001 的既有数据保留，002 新列就位', () => {
     )
     const fnd = db.get<{ check_key: string }>('SELECT check_key FROM findings WHERE id = ?', 'fnd-legacy')
     assert.equal(fnd?.check_key, 'cross:quantity')
+
+    // 004 新列就位（第五阶段）：AI 证据片段与模型名、单证级来源
+    db.run(
+      `UPDATE extracted_fields SET evidence_quote = ?, extraction_model = ? WHERE id = ?`,
+      'Quantity: 500', 'qwen-plus', 'fld-legacy',
+    )
+    const ev = db.get<{ evidence_quote: string; extraction_model: string }>(
+      'SELECT evidence_quote, extraction_model FROM extracted_fields WHERE id = ?',
+      'fld-legacy',
+    )
+    assert.equal(ev?.evidence_quote, 'Quantity: 500')
+    assert.equal(ev?.extraction_model, 'qwen-plus')
+    db.run(
+      'UPDATE documents SET extraction_provider = ?, extraction_model = ? WHERE id = ?',
+      'ai', 'qwen-plus', 'doc-legacy',
+    )
+    const docSrc = db.get<{ extraction_provider: string; extraction_model: string }>(
+      'SELECT extraction_provider, extraction_model FROM documents WHERE id = ?',
+      'doc-legacy',
+    )
+    assert.equal(docSrc?.extraction_provider, 'ai')
+    assert.equal(docSrc?.extraction_model, 'qwen-plus')
   } finally {
     db.close()
     rmSync(path, { force: true })

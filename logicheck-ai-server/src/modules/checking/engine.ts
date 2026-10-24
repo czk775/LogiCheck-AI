@@ -75,8 +75,9 @@ export class CheckEngine {
       for (const [compound, cell] of latest) {
         const [documentId, fieldKey] = compound.split('\u0000')
         if (documentId !== doc.id) continue
-        // missing / unavailable 不进入核验（值可能为空串）
-        if (cell.status === 'missing' || cell.status === 'unavailable') continue
+        // missing / unavailable / unverified 不进入核验
+        // （值可能为空串；unverified 是「模型给了但无法核实来源」，不应作为比对依据）
+        if (cell.status === 'missing' || cell.status === 'unavailable' || cell.status === 'unverified') continue
         if (cell.value.trim() === '') continue
         fields.set(fieldKey, cell.value.trim())
         const arr = ruleFieldValues.get(fieldKey) ?? []

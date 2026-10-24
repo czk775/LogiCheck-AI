@@ -28,6 +28,14 @@ export interface ExtractionOutput {
   docType: string | null
   /** 人类可读的处理说明（写入 parse_summary，可解释） */
   notes: string[]
+  /** 产出本次结果的模型名（AI 提取时写入，便于追溯到具体模型） */
+  model?: string
+}
+
+/** 字段证据（AI 提取时附带的原文引用，已被服务端核验） */
+export interface FieldEvidence {
+  /** 原文引用片段 */
+  quote: string
 }
 
 export class ProviderError extends Error {

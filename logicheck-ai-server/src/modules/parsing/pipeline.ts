@@ -95,9 +95,23 @@ export class ParsePipeline {
     if (doc.format === 'pdf') {
       const result = extractPdfText(bytes)
       if (result.warnings.includes('no_text_layer')) {
-        throw new ProviderError('no_text_layer', 'PDF 未检测到文本层（可能是扫描件），需要 OCR 支持——当前未接入')
+        // 扫描件（无文本层）：走视觉 OCR，再交给提取 Provider
+        if (!this.ocr.isConfigured()) {
+          throw new ProviderError(
+            'ocr_not_configured',
+            'PDF 未检测到文本层（扫描件），需要视觉模型 OCR；当前未接入，请配置 AI_VISION_MODEL 后重试',
+          )
+        }
+        const ocr = await this.ocr.recognize(bytes, 'application/pdf', doc.file_name)
+        const extracted = await this.extraction.extract({
+          format: 'pdf',
+          fileName: doc.file_name,
+          pages: ocr.pages,
+        })
+        return { output: extracted, source: 'ocr+ai', ocrUsed: true }
       }
-      return this.extraction.extract({ format: 'pdf', fileName: doc.file_name, pages: result.pages })
+      const extracted = await this.extraction.extract({ format: 'pdf', fileName: doc.file_name, pages: result.pages })
+      return { output: extracted, source: this.extraction.kind === 'ai' ? 'ai' : 'deterministic', ocrUsed: false }
     }
 
     if (doc.format === 'edi' || doc.format === 'txt') {
@@ -105,21 +119,37 @@ export class ParsePipeline {
       if (doc.format === 'edi') {
         const message = parseEdifact(text)
         assertSupportedType(message)
-        return this.extraction.extract({ format: 'edi', fileName: doc.file_name, message })
+        const extracted = await this.extraction.extract({ format: 'edi', fileName: doc.file_name, message })
+        return { output: extracted, source: 'deterministic', ocrUsed: false }
       }
       // 纯文本：按 PDF 文本层同构处理（单页）
-      return this.extraction.extract({ format: 'txt', fileName: doc.file_name, pages: [{ pageNumber: 1, text }] })
+      const extracted = await this.extraction.extract({
+        format: 'txt',
+        fileName: doc.file_name,
+        pages: [{ pageNumber: 1, text }],
+      })
+      return { output: extracted, source: this.extraction.kind === 'ai' ? 'ai' : 'deterministic', ocrUsed: false }
     }
 
     // 图片：走 OCR 接入点（未接入 → 明确失败）
     if (!this.ocr.isConfigured()) {
-      throw new ProviderError('ocr_not_configured', 'OCR / 视觉模型尚未接入，图片单证暂无法提取字段（等待第五阶段配置）')
+      throw new ProviderError(
+        'ocr_not_configured',
+        'OCR / 视觉模型尚未接入，图片单证暂无法提取字段（请配置 AI_VISION_MODEL 后重试）',
+      )
     }
     const ocr = await this.ocr.recognize(bytes, doc.format === 'image' ? 'image/*' : 'application/octet-stream', doc.file_name)
-    return this.extraction.extract({ format: 'image', fileName: doc.file_name, pages: ocr.pages })
+    const extracted = await this.extraction.extract({ format: 'image', fileName: doc.file_name, pages: ocr.pages })
+    return { output: extracted, source: 'ocr+ai', ocrUsed: true }
   }
 
-  private persistSuccess(doc: DocumentRow, runId: string, output: Awaited<ReturnType<ExtractionProvider['extract']>>): void {
+  private persistSuccess(
+    doc: DocumentRow,
+    runId: string,
+    parsed: { output: Awaited<ReturnType<ExtractionProvider['extract']>>; source: string; ocrUsed: boolean },
+  ): void {
+    const output = parsed.output
+    const source = parsed.source
     const t = nowIso()
     const extracted = output.fields.filter((f) => f.status !== 'missing' && f.status !== 'unavailable')
     const missing = output.fields.filter((f) => f.status === 'missing')
@@ -138,28 +168,33 @@ export class ParsePipeline {
         this.db.run(
           `INSERT INTO extracted_fields
              (id, document_id, shipment_id, field_key, value, original_value, source,
-              normalized_value, page, position, confidence, status, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, 'deterministic', ?, ?, ?, ?, ?, ?)`,
+              normalized_value, page, position, confidence, status, evidence_quote, extraction_model, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           newId('fld'),
           doc.id,
           doc.shipment_id,
           f.fieldKey,
           f.value,
-          f.status === 'missing' || f.status === 'unavailable' ? null : f.value,
+          f.status === 'missing' || f.status === 'unavailable' || f.status === 'unverified' ? null : f.value,
+          source,
           f.normalized || null,
           f.page,
           f.position,
           f.confidence,
           f.status,
+          f.evidenceQuote ?? null,
+          output.model ?? null,
           t,
         )
       }
       const docType = output.docType && output.docType !== 'unknown' ? output.docType : null
       this.db.run(
-        'UPDATE documents SET status = ?, error = NULL, doc_type = COALESCE(?, doc_type), parse_summary = ?, updated_at = ? WHERE id = ?',
+        'UPDATE documents SET status = ?, error = NULL, doc_type = COALESCE(?, doc_type), parse_summary = ?, extraction_provider = ?, extraction_model = ?, updated_at = ? WHERE id = ?',
         'parsed',
         docType,
         parseSummary,
+        source,
+        output.model ?? null,
         t,
         doc.id,
       )

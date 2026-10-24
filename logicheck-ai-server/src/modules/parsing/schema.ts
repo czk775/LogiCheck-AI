@@ -48,7 +48,12 @@ export const FIELD_KEYS = [
 export type FieldKey = (typeof FIELD_KEYS)[number]
 
 /** 字段提取状态 */
-export type FieldStatus = 'extracted' | 'low_confidence' | 'missing' | 'unavailable'
+export type FieldStatus =
+  | 'extracted' // 已提取且来源可核实
+  | 'low_confidence' // 已提取但标准化失败 / 证据强度不足
+  | 'missing' // 适用但未提取到
+  | 'unavailable' // 该单证类型不适用此字段
+  | 'unverified' // 模型给出了取值，但无法在原文中核实来源（不采信，不进入核验）
 
 /** 单条提取字段（含完整溯源信息） */
 export interface ExtractedFieldData {
@@ -64,6 +69,8 @@ export interface ExtractedFieldData {
   /** 0~1；label 精确命中为高置信，模式匹配为中，其他为低 */
   confidence: number
   status: FieldStatus
+  /** 原文证据片段（AI 提取时给出，且已被核验确实存在于该页文本中） */
+  evidenceQuote?: string | null
 }
 
 /** 中间产物：PDF 文本层（按页） */

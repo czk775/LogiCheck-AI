@@ -133,7 +133,34 @@ export function buildApp(options: { config?: AppConfig; db?: Db; mail?: MailServ
   registerFindingRoutes(app, auth, findings)
   registerRuleRoutes(app, rules)
 
-  app.get('/api/healthz', async () => ({ ok: true, db: 'sqlite', mode: mail.mode, extraction: providers.extraction.id }))
+  app.get('/api/healthz', async () => ({
+    ok: true,
+    db: 'sqlite',
+    mode: mail.mode,
+    extraction: providers.extraction.id,
+    ocr: providers.ocr.id,
+  }))
+
+  /* AI 能力状态（不返回任何密钥，仅返回是否接通与模型名，供前端展示） */
+  app.get('/api/system/ai-status', async () => {
+    if (!config.ai) {
+      return {
+        configured: false,
+        extraction: providers.extractionSource,
+        ocr: providers.ocrSource,
+        reason: '未配置 AI 服务（缺少 API Key 或模型名），当前使用确定性提取',
+      }
+    }
+    const d = config.ai.describe()
+    return {
+      configured: true,
+      extraction: providers.extractionSource,
+      ocr: providers.ocrSource,
+      baseUrl: d.baseUrl,
+      model: d.model,
+      visionModel: d.visionModel ?? d.model,
+    }
+  })
 
   return { app, config, db, mail, auth, shipments, documents, findings, rules, parseQueue, checkEngine }
 }
