@@ -38,6 +38,8 @@ export class ParsePipeline {
     private readonly storage: FileStorage,
     private readonly extraction: ExtractionProvider,
     private readonly ocr: OcrProvider,
+    /** 解析成功回调（阶段三：触发核验引擎；不得影响解析本身） */
+    private readonly onParsed?: (shipmentId: string) => void,
   ) {}
 
   /** 服务启动时恢复：parsing → uploaded（上次被打断的解析重新来） */
@@ -164,6 +166,15 @@ export class ParsePipeline {
       this.db.run('UPDATE processing_runs SET status = ?, finished_at = ?, summary = ? WHERE id = ?', 'succeeded', t, summary, runId)
       this.db.run('INSERT INTO activities (id, shipment_id, text, at) VALUES (?, ?, ?, ?)', newId('act'), doc.shipment_id, `解析完成：${doc.file_name}（${summary}）`, t)
     })
+
+    // 解析成功 → 触发核验引擎（异常隔离：引擎故障不得影响解析结果）
+    if (this.onParsed) {
+      try {
+        this.onParsed(doc.shipment_id)
+      } catch (err) {
+        console.error(`[check-engine] 货物 ${doc.shipment_id} 核验失败（解析结果不受影响）：`, err)
+      }
+    }
   }
 
   private persistFailure(doc: DocumentRow, runId: string, err: unknown): void {

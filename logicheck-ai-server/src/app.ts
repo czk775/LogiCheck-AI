@@ -26,6 +26,7 @@ import { registerRuleRoutes } from './modules/rules/routes.ts'
 import { RuleService } from './modules/rules/service.ts'
 import { buildProviders } from './modules/parsing/providers/index.ts'
 import { ParsePipeline, ParseQueue } from './modules/parsing/pipeline.ts'
+import { CheckEngine } from './modules/checking/engine.ts'
 
 export interface BuiltApp {
   app: ReturnType<typeof Fastify>
@@ -38,6 +39,7 @@ export interface BuiltApp {
   findings: FindingService
   rules: RuleService
   parseQueue: ParseQueue
+  checkEngine: CheckEngine
 }
 
 export function buildApp(options: { config?: AppConfig; db?: Db; mail?: MailService } = {}): BuiltApp {
@@ -95,7 +97,11 @@ export function buildApp(options: { config?: AppConfig; db?: Db; mail?: MailServ
 
   /* 单证解析流水线：进程内串行队列 + 可恢复状态机 */
   const providers = buildProviders(config)
-  const pipeline = new ParsePipeline(db, new FileStorage(config), providers.extraction, providers.ocr)
+  /* 核验引擎（阶段三）：跨单证一致性 + 合规规则预检，解析成功后自动运行 */
+  const checkEngine = new CheckEngine(db)
+  const pipeline = new ParsePipeline(db, new FileStorage(config), providers.extraction, providers.ocr, (shipmentId) => {
+    checkEngine.run(shipmentId, 'check')
+  })
   const parseQueue = new ParseQueue((documentId) => pipeline.run(documentId))
   // 启动恢复：上次服务中断时留在 parsing 的文档 → uploaded 重新入队
   const recovered = pipeline.recoverInterrupted()
@@ -103,7 +109,7 @@ export function buildApp(options: { config?: AppConfig; db?: Db; mail?: MailServ
   for (const id of recovered) parseQueue.enqueue(id)
   for (const id of pipeline.pendingDocumentIds()) parseQueue.enqueue(id)
 
-  const findings = new FindingService(db, shipments)
+  const findings = new FindingService(db, shipments, checkEngine)
   const rules = new RuleService(db)
 
   registerAuthRoutes(app, auth, config, limiter)
@@ -114,5 +120,5 @@ export function buildApp(options: { config?: AppConfig; db?: Db; mail?: MailServ
 
   app.get('/api/healthz', async () => ({ ok: true, db: 'sqlite', mode: mail.mode, extraction: providers.extraction.id }))
 
-  return { app, config, db, mail, auth, shipments, documents, findings, rules, parseQueue }
+  return { app, config, db, mail, auth, shipments, documents, findings, rules, parseQueue, checkEngine }
 }

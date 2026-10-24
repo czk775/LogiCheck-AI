@@ -70,7 +70,7 @@ export type RunStatus = 'queued' | 'running' | 'succeeded' | 'partially_succeede
 export interface ProcessingRun {
   id: string
   shipmentId: string
-  trigger: 'upload' | 'recheck' | 'field_update' | 'manual'
+  trigger: 'upload' | 'parse' | 'check' | 'recheck' | 'field_update' | 'manual'
   status: RunStatus
   startedAt: string
   finishedAt?: string
@@ -147,6 +147,8 @@ export interface CheckResultLite {
   label: string
   tone: 'danger' | 'warn' | 'good' | 'info' | 'neutral'
   evidenceRefs: string[]
+  /** 判定依据（阶段三：核验引擎写入；演示货物为空） */
+  reasoning?: string
 }
 
 export interface FieldCandidate {
@@ -171,7 +173,8 @@ export interface UploadResult {
 export interface RecheckReport {
   shipmentId: string
   ran: boolean
-  reason?: 'ai_not_connected' | 'no_change'
+  /** 未执行的原因：AI 未接入 / 无已解析单证 / 无变化 */
+  reason?: 'ai_not_connected' | 'no_documents' | 'no_change'
   run?: ProcessingRun
   summary: string
 }

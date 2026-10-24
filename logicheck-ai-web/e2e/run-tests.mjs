@@ -474,7 +474,7 @@ async function main() {
     await waitFor(cdp, `document.querySelector('.workspace-title')`, 5000, 'new workspace')
     check('I1 新建货物进入空工作台', await cdp.eval(`document.body.textContent.includes('上传第一份单证，开始预检')`))
     check('I2 空状态显示上传区', await cdp.eval(`!!document.querySelector('[data-testid="upload-zone"]')`))
-    check('I3 非演示货物无 AI 字段/规则空态', await cdp.eval(`document.body.textContent.includes(${API_MODE === 'real' ? "'暂无提取字段'" : "'暂无 AI 提取字段'"}) && document.body.textContent.includes('等待合规规则执行')`))
+    check('I3 非演示货物无 AI 字段/规则空态', await cdp.eval(`document.body.textContent.includes(${API_MODE === 'real' ? "'暂无提取字段'" : "'暂无 AI 提取字段'"}) && document.body.textContent.includes(${API_MODE === 'real' ? "'等待核验引擎运行'" : "'等待合规规则执行'"})`))
 
     // 上传两个真实文件
     await setFileInput(cdp, [path.join(FIXTURES, 'test-invoice.png'), path.join(FIXTURES, 'test-bol.edi')])

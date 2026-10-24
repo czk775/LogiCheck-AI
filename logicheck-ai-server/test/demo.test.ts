@@ -142,7 +142,7 @@ test('E7 重检（演示货物）：数量一致则异常解决并写 Run', asyn
   assert.equal(s.profile.quantity, '1000 PCS')
 })
 
-test('E8 重检（非演示货物）：明确 ai_not_connected，不伪造结果', async () => {
+test('E8 重检（非演示货物）：无已解析单证 → 明确 no_documents，不伪造结果', async () => {
   const c = await registerAndLogin('real-user@example.com')
   const created = await c.post('/api/shipments', { name: '真实货物' })
   const id = (created.json as { shipment: { id: string } }).shipment.id
@@ -150,12 +150,12 @@ test('E8 重检（非演示货物）：明确 ai_not_connected，不伪造结果
   assert.equal(res.status, 200, res.text)
   const report = (res.json as { report: { ran: boolean; reason?: string } }).report
   assert.equal(report.ran, false)
-  assert.equal(report.reason, 'ai_not_connected')
+  assert.equal(report.reason, 'no_documents')
 
   const runs = await c.get(`/api/shipments/${id}/runs`)
   const list = (runs.json as { runs: Array<{ status: string; error?: string }> }).runs
   assert.equal(list[0].status, 'failed')
-  assert.equal(list[0].error, 'ai_not_connected')
+  assert.equal(list[0].error, 'no_documents')
 })
 
 test('E9 人工复核：记录留痕、风险保留（reviewed ≠ resolved）', async () => {

@@ -5,6 +5,7 @@ import { useStore } from '../../store/AppStore'
 import { useToast } from '../../components/Toast'
 import { useFileChooser } from '../layout/AppShell'
 import { EvidencePreview } from '../workspace/EvidencePreview'
+import { isEngineMode } from '../../services/domain/runMode'
 import { formatTime } from '../../utils/format'
 import type { Finding, Shipment } from '../../types/domain'
 
@@ -13,6 +14,8 @@ export function IssueDrawer({ shipment, finding }: { shipment: Shipment; finding
   const { state, closeDrawer, selectEvidence, openModal, recheck } = useStore()
   const { push } = useToast()
   const chooser = useFileChooser()
+  // 引擎模式 = 真实后端 + 非演示货物（演示货物在真实后端上仍是 seed 数据）
+  const engine = isEngineMode(shipment)
 
   const evidence = finding.evidence
     .map((id) => shipment.documents.find((d) => d.id === id))
@@ -21,6 +24,12 @@ export function IssueDrawer({ shipment, finding }: { shipment: Shipment; finding
   const isQty = finding.kind === 'cross'
   const inv = shipment.documents.find((d) => d.id === 'doc-invoice')
   const pl = shipment.documents.find((d) => d.id === 'doc-packing')
+
+  // 引擎模式：对比单元格直接取证据单证的实际字段值（演示货物沿用原型固定文档）
+  const compareDocs = engine
+    ? evidence.slice(0, 2)
+    : [inv, pl].filter((d): d is NonNullable<typeof d> => Boolean(d))
+  const compareUnit = engine ? '' : 'PCS'
 
   const onReplace = () => {
     const source =
@@ -36,6 +45,9 @@ export function IssueDrawer({ shipment, finding }: { shipment: Shipment; finding
     chooser.open({ kind: 'replace', documentId: source })
   }
 
+  // 修正按钮：演示货物沿用原型约定（装箱单）；引擎模式指向当前查看的证据单证
+  const fixTargetDocId = engine ? (current?.id ?? evidence[0]?.id) : 'doc-packing'
+
   return (
     <Drawer
       title={finding.title}
@@ -50,7 +62,7 @@ export function IssueDrawer({ shipment, finding }: { shipment: Shipment; finding
             <div className="detail-label" style={{ margin: 0 }}>
               原始证据
             </div>
-            <span>演示数据 · 非原始 PDF</span>
+            <span>{engine ? '服务器原件' : '演示数据 · 非原始 PDF'}</span>
           </div>
           {evidence.length ? (
             <div className="evidence-tabs">
@@ -70,7 +82,9 @@ export function IssueDrawer({ shipment, finding }: { shipment: Shipment; finding
           <EvidencePreview doc={current ?? null} highlight={isQty ? 'quantity' : 'hs'} />
           <p className="text-note">
             {current
-              ? '当前标记的字段行来自演示结构化数据。正式版仅在真实页码、区域可用时高亮。'
+              ? engine
+                ? '当前显示的是服务器上保存的原始单证文件。'
+                : '当前标记的字段行来自演示结构化数据。正式版仅在真实页码、区域可用时高亮。'
               : '该异常缺少对应原始证据，请补充文件。'}
           </p>
         </div>
@@ -82,16 +96,14 @@ export function IssueDrawer({ shipment, finding }: { shipment: Shipment; finding
             tone={finding.status === 'resolved' ? 'good' : 'warn'}
           />
           <p className="detail-paragraph">{finding.summary}</p>
-          {isQty ? (
+          {isQty && compareDocs.length ? (
             <div className="big-compare">
-              <div className="compare-cell">
-                <span>商业发票 · Invoice</span>
-                <strong>{inv?.fields.quantity ?? '—'}</strong> <small>PCS</small>
-              </div>
-              <div className="compare-cell">
-                <span>装箱单 · Packing List</span>
-                <strong>{pl?.fields.quantity ?? '—'}</strong> <small>PCS</small>
-              </div>
+              {compareDocs.map((d) => (
+                <div className="compare-cell" key={d.id}>
+                  <span>{d.fileName}</span>
+                  <strong>{d.fields.quantity ?? '—'}</strong> {compareUnit ? <small>{compareUnit}</small> : null}
+                </div>
+              ))}
             </div>
           ) : null}
 
@@ -114,10 +126,10 @@ export function IssueDrawer({ shipment, finding }: { shipment: Shipment; finding
           </div>
 
           <div style={{ marginTop: 24, display: 'flex', flexWrap: 'wrap', gap: 9 }}>
-            {isQty ? (
+            {isQty && fixTargetDocId ? (
               <Button
                 icon="edit"
-                onClick={() => openModal({ type: 'field-edit', fieldKey: 'quantity', sourceDocumentId: 'doc-packing' })}
+                onClick={() => openModal({ type: 'field-edit', fieldKey: 'quantity', sourceDocumentId: fixTargetDocId })}
                 data-testid="fix-extraction"
               >
                 修正 AI 提取

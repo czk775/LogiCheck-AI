@@ -150,4 +150,6 @@ export interface CheckResultLite {
   /** 徽章色调 */
   tone: 'danger' | 'warn' | 'good' | 'info' | 'neutral'
   evidenceRefs: string[]
+  /** 判定依据（真实模式由核验引擎返回；演示模式无） */
+  reasoning?: string
 }

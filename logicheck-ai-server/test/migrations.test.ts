@@ -28,10 +28,10 @@ test('M1 新环境：从零应用全部迁移', () => {
   const db = openDatabase(path)
   try {
     const ran = migrate(db)
-    assert.deepEqual(ran, ['001_initial', '002_parsing'])
+    assert.deepEqual(ran, ['001_initial', '002_parsing', '003_checking'])
     assert.deepEqual(
       appliedMigrations(db).map((m) => m.version),
-      ['001_initial', '002_parsing'],
+      ['001_initial', '002_parsing', '003_checking'],
     )
     // 重复执行：无新迁移
     assert.deepEqual(migrate(db), [])
@@ -71,9 +71,9 @@ test('M2 旧库升级：001 的既有数据保留，002 新列就位', () => {
       'fld-legacy', 'doc-legacy', 'SHP-LEGACY', '2026-08-01T00:00:00.000Z',
     )
 
-    // 升级：只应应用 002
+    // 升级：只应应用 002 与 003
     const ran = migrate(db)
-    assert.deepEqual(ran, ['002_parsing'], '已应用过 001 的库只应跑 002')
+    assert.deepEqual(ran, ['002_parsing', '003_checking'], '已应用过 001 的库只应跑后续迁移')
 
     // 旧数据完整保留
     const legacy = db.get<{ value: string; source: string; status: string }>(
@@ -101,6 +101,22 @@ test('M2 旧库升级：001 的既有数据保留，002 新列就位', () => {
     db.run('UPDATE documents SET parse_summary = ? WHERE id = ?', '升级后摘要', 'doc-legacy')
     const doc = db.get<{ parse_summary: string }>('SELECT parse_summary FROM documents WHERE id = ?', 'doc-legacy')
     assert.equal(doc?.parse_summary, '升级后摘要')
+
+    // 003 新列就位：check_results.reasoning 与 findings.check_key
+    db.run(
+      `INSERT INTO check_results (id, shipment_id, rule_key, status, label, tone, evidence_refs, reasoning)
+       VALUES (?, ?, 'red', 'warning', '材料已提供', 'good', '[]', ?)`,
+      'chk-legacy', 'SHP-LEGACY', '旧库判定依据',
+    )
+    const chk = db.get<{ reasoning: string }>('SELECT reasoning FROM check_results WHERE shipment_id = ?', 'SHP-LEGACY')
+    assert.equal(chk?.reasoning, '旧库判定依据')
+    db.run(
+      `INSERT INTO findings (id, shipment_id, title, kind, severity, status, summary, evidence, check_key, created_at)
+       VALUES (?, ?, ?, 'cross', 'danger', 'open', ?, '[]', ?, ?)`,
+      'fnd-legacy', 'SHP-LEGACY', '旧库新增冲突', '数量不一致', 'cross:quantity', '2026-08-01T00:00:00.000Z',
+    )
+    const fnd = db.get<{ check_key: string }>('SELECT check_key FROM findings WHERE id = ?', 'fnd-legacy')
+    assert.equal(fnd?.check_key, 'cross:quantity')
   } finally {
     db.close()
     rmSync(path, { force: true })

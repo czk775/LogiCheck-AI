@@ -1,16 +1,18 @@
 /* ============================================================
-   字段 / 异常 / 复核 / 重检服务（演示确定性逻辑的 1:1 服务端移植）。
+   字段 / 异常 / 复核 / 重检服务。
 
    边界说明：
-   - 字段候选、人工修正留痕、人工复核、规则跟进、重检均为「确定性演示逻辑」，
-     与前端 Mock 行为一致，全部落真实数据库；不调用任何 AI 或规则引擎。
-   - 非演示货物的重检明确返回 ai_not_connected，不伪造检查结果。
+   - 字段候选、人工修正留痕、人工复核、规则跟进均为「确定性演示逻辑」，
+     与前端 Mock 行为一致，全部落真实数据库。
+   - 阶段三起：非演示货物的重检走确定性核验引擎（跨单证一致性 + 合规预检），
+     检查结果与异常均由引擎生成并引用真实证据；无已解析单证时明确不跑。
    ============================================================ */
 
 import type { Db } from '../../db/index.ts'
 import { errors } from '../../core/errors.ts'
 import { newId, nowIso } from '../../core/ids.ts'
 import type { ShipmentService } from '../shipments/service.ts'
+import type { CheckEngine } from '../checking/engine.ts'
 import { RULE_NAMES } from '../demo/seed.ts'
 import type {
   CheckResultLite,
@@ -46,6 +48,8 @@ export class FindingService {
   constructor(
     private readonly db: Db,
     private readonly shipments: ShipmentService,
+    /** 核验引擎（阶段三；未注入时非演示货物重检保持诚实降级） */
+    private readonly checkEngine?: CheckEngine,
   ) {}
 
   /* ---------- 字段候选 ---------- */
@@ -187,8 +191,16 @@ export class FindingService {
 
   createRuleFollowUp(userId: string, shipmentId: string, ruleKey: string): Finding {
     const shipment = this.requireShipment(userId, shipmentId)
+    // 演示货物： curated 检查结果始终存在；真实货物：需引擎已生成该规则的检查结果
     if (!shipment.isDemo) {
-      throw errors.badRequest('当前货物没有该规则的真实检查结果，无法记录人工意见')
+      const hasResult = this.db.get<{ n: number }>(
+        'SELECT COUNT(*) AS n FROM check_results WHERE shipment_id = ? AND rule_key = ?',
+        shipmentId,
+        ruleKey,
+      )?.n
+      if (!hasResult) {
+        throw errors.badRequest('当前货物没有该规则的真实检查结果，无法记录人工意见')
+      }
     }
     const existing = this.db.get<{ id: string }>(
       `SELECT id FROM findings WHERE shipment_id = ? AND rule_key = ? AND status != 'resolved'`,
@@ -234,40 +246,49 @@ export class FindingService {
       ruleVersion: 'Demo v0.1',
     }
 
-    // 非演示货物：没有真实 AI 与规则引擎，明确不生成结果
+    // 非演示货物：走确定性核验引擎（阶段三）。无已解析单证 → 明确不跑
     if (!shipment.isDemo) {
-      this.db.transaction(() => {
-        this.db.run('UPDATE shipments SET updated_at = ? WHERE id = ?', t, shipmentId)
-        this.db.run(
-          'INSERT INTO activities (id, shipment_id, text, at) VALUES (?, ?, ?, ?)',
-          newId('act'),
-          shipmentId,
-          '手动请求重新检查',
-          t,
-        )
-        this.db.run(
-          `INSERT INTO processing_runs (id, shipment_id, trigger, status, started_at, finished_at, summary, rule_version, error)
-           VALUES (?, ?, 'recheck', 'failed', ?, ?, '手动请求重新检查', 'Demo v0.1', 'ai_not_connected')`,
-          runId,
-          shipmentId,
-          t,
-          t,
-        )
-      })
-      const run: ProcessingRun = {
-        ...base,
-        status: 'failed',
-        finishedAt: t,
-        summary: '真实文件的 AI 解析和预检尚未接入，未生成检查结果',
-        error: 'ai_not_connected',
-      }
-      return {
+      const parsed = this.db.get<{ n: number }>(
+        "SELECT COUNT(*) AS n FROM documents WHERE shipment_id = ? AND is_demo = 0 AND status = 'parsed'",
         shipmentId,
-        ran: false,
-        reason: 'ai_not_connected',
-        run,
-        summary: '真实文件的 AI 解析和预检尚未接入。已保留资料，未生成虚假检查结果。',
+      )?.n ?? 0
+      if (!this.checkEngine || parsed === 0) {
+        const reason: 'no_documents' | 'ai_not_connected' = this.checkEngine ? 'no_documents' : 'ai_not_connected'
+        const message =
+          reason === 'no_documents'
+            ? '尚无已解析的单证，无法执行核验；请先上传并成功解析单证'
+            : '真实文件的解析与预检尚未接入，未生成检查结果'
+        this.db.transaction(() => {
+          this.db.run('UPDATE shipments SET updated_at = ? WHERE id = ?', t, shipmentId)
+          this.db.run('INSERT INTO activities (id, shipment_id, text, at) VALUES (?, ?, ?, ?)', newId('act'), shipmentId, '手动请求重新检查', t)
+          this.db.run(
+            `INSERT INTO processing_runs (id, shipment_id, trigger, status, started_at, finished_at, summary, rule_version, error)
+             VALUES (?, ?, 'recheck', 'failed', ?, ?, '手动请求重新检查', NULL, ?)`,
+            runId,
+            shipmentId,
+            t,
+            t,
+            reason,
+          )
+        })
+        const run: ProcessingRun = {
+          ...base,
+          status: 'failed',
+          finishedAt: t,
+          summary: '手动请求重新检查',
+          error: reason,
+        }
+        return {
+          shipmentId,
+          ran: false,
+          reason,
+          run,
+          summary: message,
+        }
       }
+
+      const report = this.checkEngine.run(shipmentId, 'recheck')
+      return { shipmentId, ran: true, run: report.run, summary: report.summary }
     }
 
     // 演示货物：确定性的数量一致性核验（与原型一致）
@@ -358,14 +379,13 @@ export class FindingService {
       .map((a) => ({ text: a.text, at: a.at }))
   }
 
-  /** 规则预检概况：演示货物读内置示例结果；非演示货物为空（未接入真实预检） */
+  /** 规则预检概况：演示货物读 seed 的 curated 结果；真实货物读引擎写入的结果 */
   getCheckResults(userId: string, shipmentId: string): CheckResultLite[] {
-    const shipment = this.requireShipment(userId, shipmentId)
-    if (!shipment.isDemo) return []
+    this.requireShipment(userId, shipmentId)
     return this.db
-      .all<{ rule_key: string; status: CheckResultLite['status']; label: string; tone: CheckResultLite['tone']; evidence_refs: string }>(
+      .all<{ rule_key: string; status: CheckResultLite['status']; label: string; tone: CheckResultLite['tone']; evidence_refs: string; reasoning: string | null }>(
         // 必须按插入顺序（rowid）返回：id 为随机串，ORDER BY id 会打乱与前端约定的一致顺序
-        'SELECT rule_key, status, label, tone, evidence_refs FROM check_results WHERE shipment_id = ? ORDER BY rowid ASC',
+        'SELECT rule_key, status, label, tone, evidence_refs, reasoning FROM check_results WHERE shipment_id = ? ORDER BY rowid ASC',
         shipmentId,
       )
       .map((r) => ({
@@ -374,6 +394,7 @@ export class FindingService {
         label: r.label,
         tone: r.tone,
         evidenceRefs: safeJsonArray(r.evidence_refs),
+        ...(r.reasoning ? { reasoning: r.reasoning } : {}),
       }))
   }
 
