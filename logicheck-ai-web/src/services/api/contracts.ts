@@ -120,6 +120,18 @@ export interface AiStatus {
   visionModel?: string | null
   /** 未接通时的原因说明 */
   reason?: string
+  /**
+   * 本进程累计用量（额度护栏观测口）。
+   * 注意：这是「已用掉多少」，不是「还剩多少」——剩余额度需看服务商控制台。
+   */
+  usage?: {
+    calls: number
+    promptTokens: number
+    completionTokens: number
+    totalTokens: number
+    limitTokens: number
+    exhausted: boolean
+  }
 }
 
 /* ---------- 服务接口 ---------- */

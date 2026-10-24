@@ -263,3 +263,73 @@ test('PH5LLM15 JSON 解析失败 → 抛出可识别错误码 invalid_json', () 
     },
   )
 })
+
+/* ---------- 额度护栏：进程内累计用量上限 ---------- */
+
+test('PH5LLM16 累计用量被如实记录（可观测，不只是限制）', async () => {
+  const server = await startFakeAiServer({ responder: () => ({ body: chatResponse('ok') }) })
+  try {
+    const c = client(server.baseUrl)
+    await c.chat([{ role: 'user', content: 'a' }])
+    await c.chat([{ role: 'user', content: 'b' }])
+    const snap = c.usage.snapshot()
+    assert.equal(snap.calls, 2, '应记录调用次数')
+    assert.equal(snap.promptTokens, 20, '应累计 prompt token')
+    assert.equal(snap.completionTokens, 20, '应累计 completion token')
+    assert.equal(snap.totalTokens, 40, '应累计总 token')
+    assert.equal(snap.exhausted, false)
+  } finally {
+    await server.close()
+  }
+})
+
+test('PH5LLM17 累计用量触顶后停止调用模型（额度护栏第二道防线）', async () => {
+  const server = await startFakeAiServer({ responder: () => ({ body: chatResponse('ok') }) })
+  try {
+    // 单次调用消耗 20 token（chatResponse 的 usage），限额设为 25
+    const c = new LlmClient({
+      apiKey: KEY,
+      baseUrl: server.baseUrl,
+      model: 'qwen-plus',
+      timeoutMs: 5_000,
+      maxRetries: 0,
+      usageLimitTokens: 25,
+    })
+    await c.chat([{ role: 'user', content: 'a' }])
+    assert.equal(c.usage.snapshot().totalTokens, 20)
+    assert.equal(c.usage.snapshot().exhausted, false, '尚未触顶')
+
+    // 第二次调用后累计 40 > 25 → 触顶
+    await c.chat([{ role: 'user', content: 'b' }])
+    assert.equal(c.usage.snapshot().exhausted, true, '应已触顶')
+
+    // 第三次调用必须被拒绝，且不得再发请求
+    const callsBefore = server.requests.length
+    await assert.rejects(
+      () => c.chat([{ role: 'user', content: 'c' }]),
+      (err: unknown) => {
+        assert.ok(err instanceof LlmError)
+        assert.equal(err.code, 'quota_exceeded')
+        assert.equal(err.retryable, false, '触顶后不应重试')
+        assert.ok(!err.message.includes(KEY), '错误消息不得含密钥')
+        return true
+      },
+    )
+    assert.equal(server.requests.length, callsBefore, '触顶后不得再向服务商发请求')
+  } finally {
+    await server.close()
+  }
+})
+
+test('PH5LLM18 未配置用量上限时不限制（默认无限）', async () => {
+  const server = await startFakeAiServer({ responder: () => ({ body: chatResponse('ok') }) })
+  try {
+    const c = client(server.baseUrl)
+    for (let i = 0; i < 5; i++) await c.chat([{ role: 'user', content: 'x' }])
+    assert.equal(c.usage.snapshot().totalTokens, 100)
+    assert.equal(c.usage.snapshot().exhausted, false, '未设上限时不应触顶')
+    assert.equal(server.requests.length, 5)
+  } finally {
+    await server.close()
+  }
+})

@@ -182,6 +182,14 @@ try {
   check(ocrDocs.length >= 1, '扫描件/图片走 OCR 路径（provider=ocr+ai）')
 
   step(10, '汇总')
+  // 实际用量统计（额度护栏观测口）：联调到底花了多少 token
+  const usageRes = await fetch(`${base}/api/system/ai-status`)
+  const usageStatus = (await usageRes.json()) as { usage?: { calls: number; promptTokens: number; completionTokens: number; totalTokens: number } | null }
+  const u = usageStatus.usage
+  if (u) {
+    log(`   实际用量：${u.calls} 次调用，prompt ${u.promptTokens} + completion ${u.completionTokens} = ${u.totalTokens} token`)
+    log(`   额度参考：qwen3.8-flash 限流 50 万 token/6 分钟，本次约占 ${(u.totalTokens / 500_000 * 100).toFixed(3)}%`)
+  }
   if (failures === 0) {
     log('   ✅ 真实 AI 端到端联调全部通过')
   } else {

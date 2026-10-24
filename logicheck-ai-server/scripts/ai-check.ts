@@ -100,7 +100,12 @@ try {
     console.log('token：   ', JSON.stringify(res.usage))
     const total = res.usage.totalTokens ?? 0
     if (total > 0) {
-      console.log('额度参考：新人免费额度约 100 万 token/模型，本次自检约占 ' + (total / 10000).toFixed(2) + '%')
+      // 换算到限流窗口：qwen3.8-flash 为 50 万 token / 6 分钟
+      const limit = 500_000
+      console.log(
+        '额度占用：本次 ' + total + ' token，约占 qwen3.8-flash 限流窗口（50 万/6 分钟）的 ' +
+          (total / limit * 100).toFixed(3) + '%',
+      )
     }
   }
   console.log('返回内容：', res.content.slice(0, 600))

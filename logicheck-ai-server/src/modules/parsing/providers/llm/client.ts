@@ -53,6 +53,44 @@ const RETRYABLE: Record<LlmErrorCode, boolean> = {
   not_configured: false,
 }
 
+/**
+ * 进程内用量累计器（额度护栏的第二道防线）。
+ *
+ * 第一道是单次 `max_tokens` 封顶（防单次失控）；
+ * 这一道管总量：连续跑批 / 误循环时，累计用量触顶后直接拒绝继续调用，
+ * 而不是等服务商返回 429 或账单超支才发现。
+ */
+export class UsageMeter {
+  private promptTokens = 0
+  private completionTokens = 0
+  private calls = 0
+
+  constructor(private readonly limitTokens: number) {}
+
+  /** 累计一次调用的用量；返回是否仍在限额内 */
+  record(usage: LlmResponse['usage']): boolean {
+    this.calls += 1
+    this.promptTokens += usage?.promptTokens ?? 0
+    this.completionTokens += usage?.completionTokens ?? 0
+    return this.totalTokens() < this.limitTokens
+  }
+
+  totalTokens(): number {
+    return this.promptTokens + this.completionTokens
+  }
+
+  snapshot(): { calls: number; promptTokens: number; completionTokens: number; totalTokens: number; limitTokens: number; exhausted: boolean } {
+    return {
+      calls: this.calls,
+      promptTokens: this.promptTokens,
+      completionTokens: this.completionTokens,
+      totalTokens: this.totalTokens(),
+      limitTokens: this.limitTokens,
+      exhausted: this.totalTokens() >= this.limitTokens,
+    }
+  }
+}
+
 export class LlmError extends Error {
   constructor(
     public readonly code: LlmErrorCode,
@@ -85,6 +123,11 @@ export interface LlmConfig {
    * 因此即使调用方不配置也必须有安全默认值。
    */
   maxOutputTokens?: number
+  /**
+   * 进程内累计用量上限（token）。
+   * 超过后本进程不再发起调用，避免跑批 / 误循环把额度烧穿。
+   */
+  usageLimitTokens?: number
 }
 
 /** 输出上限默认值：提取任务真实需要仅数百 token，此值留足余量 */
@@ -164,10 +207,23 @@ export function classifyHttpFailure(status: number, body: unknown): LlmErrorCode
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
 export class LlmClient {
-  constructor(private readonly config: LlmConfig) {}
+  /** 进程内累计用量（额度护栏第二道防线） */
+  readonly usage: UsageMeter
+
+  constructor(private readonly config: LlmConfig) {
+    this.usage = new UsageMeter(config.usageLimitTokens ?? Number.POSITIVE_INFINITY)
+  }
 
   /** 发起一次 chat/completions 调用（内部含重试） */
   async chat(messages: LlmMessage[]): Promise<LlmResponse> {
+    // 累计用量已触顶 → 直接拒绝，不再发起调用（额度护栏）
+    if (this.usage.snapshot().exhausted) {
+      throw new LlmError(
+        'quota_exceeded',
+        `本进程累计用量已达上限（${this.config.usageLimitTokens} token），已停止继续调用模型。请重启服务或调高 AI_USAGE_LIMIT_TOKENS。`,
+        false,
+      )
+    }
     const endpoint = `${this.config.baseUrl.replace(/\/+$/, '')}/chat/completions`
     const body: ChatRequestBody = {
       model: this.config.model,
@@ -182,7 +238,10 @@ export class LlmClient {
     let lastError: LlmError | null = null
     for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
       try {
-        return await this.attempt(endpoint, body)
+        const res = await this.attempt(endpoint, body)
+        // 记录本次用量（供额度护栏与用量统计使用）
+        this.usage.record(res.usage)
+        return res
       } catch (err) {
         const e = err instanceof LlmError ? err : new LlmError('network_error', USER_MESSAGE.network_error, true)
         lastError = e

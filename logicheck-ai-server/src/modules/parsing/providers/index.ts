@@ -26,6 +26,11 @@ export interface ProviderRegistry {
   extractionSource: string
   /** 当前 OCR 来源标识 */
   ocrSource: string
+  /**
+   * 本进程累计用量快照（额度护栏观测口，不含任何密钥）。
+   * 未配置 AI 时为 null。
+   */
+  usage(): { calls: number; promptTokens: number; completionTokens: number; totalTokens: number; limitTokens: number; exhausted: boolean } | null
 }
 
 export function buildProviders(config: AppConfig): ProviderRegistry {
@@ -34,17 +39,20 @@ export function buildProviders(config: AppConfig): ProviderRegistry {
   /* 提取 Provider */
   let extraction: ExtractionProvider
   let extractionSource: string
+  let extractionClient: LlmClient | null = null
   if (config.extractionProvider === 'ai') {
     if (ai) {
+      extractionClient = new LlmClient({
+        apiKey: ai.apiKey,
+        baseUrl: ai.baseUrl,
+        model: ai.model,
+        timeoutMs: ai.timeoutMs,
+        maxRetries: ai.maxRetries,
+        maxOutputTokens: ai.maxOutputTokens,
+        usageLimitTokens: ai.usageLimitTokens,
+      })
       extraction = new AiExtractionProvider({
-        client: new LlmClient({
-          apiKey: ai.apiKey,
-          baseUrl: ai.baseUrl,
-          model: ai.model,
-          timeoutMs: ai.timeoutMs,
-          maxRetries: ai.maxRetries,
-          maxOutputTokens: ai.maxOutputTokens,
-        }),
+        client: extractionClient,
         maxPages: ai.maxPages,
       })
       extractionSource = 'ai'
@@ -63,17 +71,20 @@ export function buildProviders(config: AppConfig): ProviderRegistry {
   /* OCR Provider（视觉模型） */
   let ocr: OcrProvider
   let ocrSource: string
+  let ocrClient: LlmClient | null = null
   if (ai) {
     const visionModel = ai.visionModel ?? ai.model
+    ocrClient = new LlmClient({
+      apiKey: ai.apiKey,
+      baseUrl: ai.baseUrl,
+      model: visionModel,
+      timeoutMs: ai.timeoutMs,
+      maxRetries: ai.maxRetries,
+      maxOutputTokens: ai.maxOutputTokens,
+      usageLimitTokens: ai.usageLimitTokens,
+    })
     ocr = new VisionOcrProvider({
-      client: new LlmClient({
-        apiKey: ai.apiKey,
-        baseUrl: ai.baseUrl,
-        model: visionModel,
-        timeoutMs: ai.timeoutMs,
-        maxRetries: ai.maxRetries,
-        maxOutputTokens: ai.maxOutputTokens,
-      }),
+      client: ocrClient,
       maxPages: ai.maxPages,
     })
     ocrSource = 'ocr'
@@ -82,7 +93,26 @@ export function buildProviders(config: AppConfig): ProviderRegistry {
     ocrSource = 'none'
   }
 
-  return { extraction, ocr, extractionSource, ocrSource }
+  return {
+    extraction,
+    ocr,
+    extractionSource,
+    ocrSource,
+    /** 两条链路的用量合并统计（额度护栏观测口） */
+    usage() {
+      if (!extractionClient && !ocrClient) return null
+      const a = extractionClient?.usage.snapshot()
+      const b = ocrClient?.usage.snapshot()
+      const calls = (a?.calls ?? 0) + (b?.calls ?? 0)
+      const promptTokens = (a?.promptTokens ?? 0) + (b?.promptTokens ?? 0)
+      const completionTokens = (a?.completionTokens ?? 0) + (b?.completionTokens ?? 0)
+      const totalTokens = promptTokens + completionTokens
+      const limitTokens = Math.min(
+        ...[a?.limitTokens, b?.limitTokens].filter((v): v is number => typeof v === 'number'),
+      )
+      return { calls, promptTokens, completionTokens, totalTokens, limitTokens, exhausted: totalTokens >= limitTokens }
+    },
+  }
 }
 
 export type { AiProviderConfig } from './ai.ts'

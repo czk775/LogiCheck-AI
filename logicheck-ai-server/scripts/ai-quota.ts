@@ -165,9 +165,10 @@ async function main(): Promise<void> {
     console.log('    https://bailian.console.aliyun.com/cn-beijing/costing-balance/free-quota')
     console.log('  建议在该页开启「免费额度用完即停」，避免意外从余额扣费。')
 
-    console.log('\n用量参考：')
-    console.log('  一次完整联调（自检 + 端到端）约消耗 3~6 万 token')
-    console.log('  qwen3.8-flash 限流 50 万 token/6 分钟，单次联调远低于限流，不会触发 429')
+    console.log('\n用量参考（实测）：')
+    console.log('  一次连通性自检（npm run ai:check）约 400 token')
+    console.log('  一次完整端到端联调（npm run ai:e2e，4 份真实文件）约 1.1 万 token / 6 次调用')
+    console.log('  qwen3.8-flash 限流 50 万 token/6 分钟，单次联调约占 2%，不会触发 429')
     console.log('  若剩余额度偏低，优先把 EXTRACTION_PROVIDER 改回 deterministic')
     process.exit(0)
   } catch (err) {
