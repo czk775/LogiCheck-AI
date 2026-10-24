@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react'
 import { api, apiMode } from '../services/api'
+import type { AiStatus } from '../services/api/contracts'
 import type { RuleKey, Shipment, UserSession } from '../types/domain'
 import { useToast } from '../components/Toast'
 
@@ -54,6 +55,8 @@ interface AppState {
   drawer: UiDrawer | null
   selectedEvidenceId: string | null
   fileMode: FileMode
+  /** AI 能力状态（第五阶段）；null = 尚未读到 */
+  aiStatus: AiStatus | null
 }
 
 type Action =
@@ -68,6 +71,7 @@ type Action =
   | { type: 'ui/selectedEvidence'; id: string | null }
   | { type: 'ui/fileMode'; mode: FileMode }
   | { type: 'ui/activeShipment'; id: string | null }
+  | { type: 'ai/status'; status: AiStatus | null }
 
 const initialState: AppState = {
   account: null,
@@ -81,6 +85,7 @@ const initialState: AppState = {
   drawer: null,
   selectedEvidenceId: null,
   fileMode: { kind: 'add' },
+  aiStatus: null,
 }
 
 function reducer(state: AppState, action: Action): AppState {
@@ -107,6 +112,8 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, fileMode: action.mode }
     case 'ui/activeShipment':
       return { ...state, activeShipmentId: action.id }
+    case 'ai/status':
+      return { ...state, aiStatus: action.status }
     default:
       return state
   }
@@ -148,6 +155,8 @@ export interface AppStoreValue {
   selectEvidence: (id: string) => void
   setFileMode: (mode: FileMode) => void
   refresh: () => Promise<void>
+  /** 重新读取 AI 能力状态（配置变更后或手动刷新用） */
+  refreshAiStatus: () => Promise<void>
 }
 
 const StoreContext = createContext<AppStoreValue | null>(null)
@@ -170,12 +179,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'shipments/set', shipments })
   }, [])
 
+  /* 读取 AI 能力状态（第五阶段）；读不到时保持 null，UI 显示「状态未知」 */
+  const syncAiStatus = useCallback(async () => {
+    try {
+      const status = await api.getAiStatus()
+      dispatch({ type: 'ai/status', status })
+    } catch {
+      dispatch({ type: 'ai/status', status: null })
+    }
+  }, [])
+
   /* 启动时恢复会话 + 订阅 Mock 数据变更（上传状态机推进等） */
   useEffect(() => {
     let alive = true
     void syncShipments().finally(() => {
       if (alive) dispatch({ type: 'ui/hydrated' })
     })
+    void syncAiStatus()
     const unsubscribe = api.subscribe(() => {
       void syncShipments()
     })
@@ -183,7 +203,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       alive = false
       unsubscribe()
     }
-  }, [syncShipments])
+  }, [syncShipments, syncAiStatus])
 
   const activeShipment = useMemo(
     () => state.shipments.find((s) => s.id === state.activeShipmentId) ?? null,
@@ -313,9 +333,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       retryDocument: async (documentId) => {
         const shipment = requireActive()
-        await api.retryDocument(shipment.id, documentId)
-        await syncShipments()
-        push('已保留文件，等待真实解析服务接入。')
+        try {
+          await api.retryDocument(shipment.id, documentId)
+          await syncShipments()
+          await syncAiStatus()
+          push('已重新提交解析，完成后会自动刷新结果。')
+        } catch (err) {
+          push(err instanceof Error ? err.message : '重新解析失败，请稍后再试', 'error')
+        }
       },
 
       updateField: async (fieldKey, sourceDocumentId, val) => {
@@ -411,8 +436,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       selectEvidence: (id) => dispatch({ type: 'ui/selectedEvidence', id }),
       setFileMode: (mode) => dispatch({ type: 'ui/fileMode', mode }),
       refresh: syncShipments,
+      refreshAiStatus: syncAiStatus,
     }
-  }, [state, activeShipment, push, syncShipments])
+  }, [state, activeShipment, push, syncShipments, syncAiStatus])
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
 }

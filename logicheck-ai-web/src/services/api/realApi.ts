@@ -22,6 +22,7 @@ import type {
   UserSession,
 } from '../../types/domain'
 import type {
+  AiStatus,
   CheckResultLite,
   CreateShipmentRequest,
   LoginRequest,
@@ -284,6 +285,14 @@ export class RealApi implements LogiCheckApi {
       `/shipments/${encodeURIComponent(shipmentId)}/activities`,
     )
     return data.activities
+  }
+
+  /* ---------- AI 能力状态（第五阶段）---------- */
+
+  async getAiStatus(): Promise<AiStatus> {
+    // 该端点不需要登录态（用于未登录时也能判断后端是否接通 AI）
+    const data = await request<AiStatus>('/system/ai-status')
+    return data
   }
 
   /* ---------- 订阅（后端无推送，no-op） ---------- */

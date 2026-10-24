@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { Icon } from '../../components/Icon'
 import { Chip } from '../../components/Chip'
 import { useStore } from '../../store/AppStore'
 import { docStatusMeta } from '../../services/domain/shipmentStatus'
+import { toDocErrorView, isRetryWorthwhile } from '../../services/domain/aiStatus'
 import { UploadZone } from './UploadZone'
 import { useFileChooser } from '../layout/AppShell'
 import { formatFileSize } from '../../utils/format'
@@ -69,8 +71,20 @@ function DocumentRow({
   onRetry: () => void
 }) {
   const meta = docStatusMeta(d)
+  const [retrying, setRetrying] = useState(false)
+  const errorView = toDocErrorView(d.error)
+  const errorCode = d.error ? d.error.split(':')[0].trim() : ''
+  const canRetry = errorView ? isRetryWorthwhile(errorCode) : true
+
+  const handleRetry = () => {
+    setRetrying(true)
+    onRetry()
+    // 状态由 Store 同步刷新；这里只做短暂的按钮态，避免重复点击
+    window.setTimeout(() => setRetrying(false), 1200)
+  }
+
   return (
-    <div className="sub-row" data-testid="doc-row" data-file-name={d.fileName}>
+    <div className="sub-row doc-row-wrap" data-testid="doc-row" data-file-name={d.fileName}>
       <div className="doc-icon">
         <Icon name={d.format === 'edi' ? 'clipboard' : 'file'} />
       </div>
@@ -78,8 +92,22 @@ function DocumentRow({
         <strong title={d.fileName}>{d.fileName}</strong>
         <span>
           {d.docType || '待识别单证类型'} · {d.isDemo ? '演示来源' : `用户本地文件 · ${formatFileSize(d.size)}`}
-          {d.error ? ` · ${d.error}` : ''}
         </span>
+        {errorView ? (
+          <div className="doc-error" data-testid="doc-error">
+            <div className="doc-error-head">
+              <Icon name="alert" size="sm" />
+              <span className="doc-error-title">{errorView.title}</span>
+            </div>
+            <p className="doc-error-advice">{errorView.advice}</p>
+            {!errorView.known ? (
+              <details className="doc-error-raw">
+                <summary>技术详情</summary>
+                <code>{errorView.raw}</code>
+              </details>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <div className="doc-actions">
         <Chip label={meta.label} tone={meta.tone} />
@@ -87,8 +115,15 @@ function DocumentRow({
           <Icon name="eye" size="sm" />
         </button>
         {d.status === 'failed' ? (
-          <button type="button" className="link-btn" onClick={onRetry} data-testid="retry-doc">
-            重试
+          <button
+            type="button"
+            className="link-btn"
+            onClick={handleRetry}
+            disabled={retrying || !canRetry}
+            data-testid="retry-doc"
+            title={canRetry ? '重新解析该单证' : '该问题重试无法解决，请按提示处理配置'}
+          >
+            {retrying ? '解析中…' : '重新解析'}
           </button>
         ) : null}
         <button

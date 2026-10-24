@@ -22,6 +22,7 @@ import type {
   UserSession,
 } from '../../types/domain'
 import type {
+  AiStatus,
   CheckResultLite,
   CreateShipmentRequest,
   LogiCheckApi,
@@ -612,6 +613,22 @@ export class MockLogiCheckApi implements LogiCheckApi {
       { ruleKey: 'weee', status: 'not_applicable', label: '适用性待确认', tone: 'neutral', evidenceRefs: [] },
       { ruleKey: 'hs', status: 'warning', label: '需人工核查', tone: 'warn', evidenceRefs: [] },
     ]
+  }
+
+  /* ---------- AI 能力状态（第五阶段）---------- */
+
+  /**
+   * Mock 模式如实返回「未接通」。
+   * 演示模式全部使用预置数据，不经过任何大模型 —— 绝不能在这里
+   * 伪造一个「AI 已连接」让用户以为演示结果来自真实模型。
+   */
+  async getAiStatus(): Promise<AiStatus> {
+    return {
+      configured: false,
+      extraction: 'deterministic',
+      ocr: 'none',
+      reason: '当前为前端演示模式，未连接真实大模型；演示结果来自预置数据',
+    }
   }
 
   /* ---------- 处理记录 ---------- */

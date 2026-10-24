@@ -96,6 +96,32 @@ export interface ApiErrorShape {
   message: string
 }
 
+/* ---------- AI 能力状态（第五阶段）---------- */
+
+/**
+ * AI 能力状态。
+ *
+ * 诚实边界：
+ * - 只描述「当前 AI 能力是否可用、用的哪个模型」，不含任何密钥
+ * - 不含限流配额（限流 ≠ 免费额度余额，两者不可混称）
+ */
+export interface AiStatus {
+  /** 是否已接通真实 AI（Key + 模型名齐备） */
+  configured: boolean
+  /** 提取来源标识：ai / deterministic */
+  extraction: string
+  /** OCR 来源标识：ocr / none */
+  ocr: string
+  /** 接入地址（不含任何凭据） */
+  baseUrl?: string
+  /** 文本提取模型名 */
+  model?: string
+  /** 视觉/OCR 模型名 */
+  visionModel?: string | null
+  /** 未接通时的原因说明 */
+  reason?: string
+}
+
 /* ---------- 服务接口 ---------- */
 
 export interface LogiCheckApi {
@@ -144,6 +170,9 @@ export interface LogiCheckApi {
   /* 合规规则（CMP-01） */
   getRules(): Promise<ComplianceRule[]>
   getCheckResults(shipmentId: string): Promise<CheckResultLite[]>
+
+  /* AI 能力状态（第五阶段）：不含密钥、不含限流配额 */
+  getAiStatus(): Promise<AiStatus>
 
   /* 处理记录（STORE-01） */
   getRuns(shipmentId: string): Promise<ProcessingRun[]>

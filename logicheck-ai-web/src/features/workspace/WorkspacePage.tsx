@@ -7,6 +7,7 @@ import { useToast } from '../../components/Toast'
 import { useFileChooser } from '../layout/AppShell'
 import { StatusPanel } from './StatusPanel'
 import { NextActionPanel } from './NextActionPanel'
+import { AiStatusBar } from './AiStatusBar'
 import { MetricsRow } from './MetricsRow'
 import { IssuesSection } from './IssuesSection'
 import { DocumentsSection } from './DocumentsSection'
@@ -66,6 +67,7 @@ export function WorkspacePage() {
           </div>
         </div>
         <div className="actions">
+          <AiStatusBar />
           <Button icon="plus" onClick={() => chooser.open({ kind: 'add' })} data-testid="upload-documents">
             补充单证
           </Button>

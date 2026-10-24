@@ -458,6 +458,125 @@
     color: #8fa4ba;
   }
 
+  /* ---------- AI 状态条（第五阶段）---------- */
+  .ai-status {
+    position: relative;
+  }
+  .ai-status-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 12px;
+    border-radius: 100px;
+    border: 1px solid #31435a;
+    background: #1b2c40;
+    color: #9fb4c8;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease;
+    white-space: nowrap;
+  }
+  .ai-status-trigger:hover {
+    border-color: #46617c;
+    color: #cfe0ef;
+  }
+  .ai-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+  }
+  .ai-status-trigger.tone-good {
+    border-color: #285c53;
+    background: #183a39;
+    color: #82e6be;
+  }
+  .ai-status-trigger.tone-warn {
+    border-color: #71583e;
+    background: #3c332b;
+    color: #f7ca8a;
+  }
+  .ai-status-trigger.tone-danger {
+    border-color: #71434c;
+    background: #422731;
+    color: #f9a0a6;
+  }
+  .ai-status-trigger.tone-neutral {
+    color: #8fa4ba;
+  }
+  .ai-status-caret {
+    display: inline-flex;
+    transition: transform 0.18s ease;
+  }
+  .ai-status-caret.open {
+    transform: rotate(180deg);
+  }
+  .ai-status-pop {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 40;
+    width: 288px;
+    padding: 15px 16px;
+    border-radius: 13px;
+    border: 1px solid #31435a;
+    background: #142032;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
+  }
+  .ai-status-list {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .ai-status-item {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  .ai-status-item dt {
+    font-size: 11px;
+    color: #7f97ad;
+    flex-shrink: 0;
+  }
+  .ai-status-item dd {
+    margin: 0;
+    font-size: 11px;
+    font-weight: 700;
+    color: #dce9f5;
+    text-align: right;
+    word-break: break-all;
+  }
+  .ai-status-hint {
+    margin: 12px 0 0;
+    padding-top: 11px;
+    border-top: 1px solid #26374c;
+    font-size: 10.5px;
+    line-height: 1.6;
+    color: #90a8bc;
+  }
+  .ai-status-refresh {
+    margin-top: 11px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 11px;
+    border-radius: 8px;
+    border: 1px solid #344b60;
+    background: #1b2c40;
+    color: #b9cde0;
+    font-size: 10.5px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .ai-status-refresh:hover {
+    border-color: #4a6884;
+    color: #e2eef8;
+  }
+
   /* ---------- 玻璃面板 / hero ---------- */
   .glass-panel {
     background: linear-gradient(160deg, #132236 0%, #101b2b 100%);
@@ -650,6 +769,11 @@
   }
   .link-btn:hover {
     text-decoration: underline;
+  }
+  .link-btn:disabled {
+    color: #55697c;
+    cursor: not-allowed;
+    text-decoration: none;
   }
   .row-actions {
     display: flex;
@@ -1049,6 +1173,52 @@
   }
   .doc-actions .link-btn {
     white-space: nowrap;
+  }
+
+  /* ---------- 单证解析失败（第五阶段）---------- */
+  .doc-row-wrap {
+    align-items: flex-start;
+  }
+  .doc-error {
+    margin-top: 9px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #71434c;
+    background: #3a242c;
+  }
+  .doc-error-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: #f9a0a6;
+  }
+  .doc-error-title {
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .doc-error-advice {
+    margin: 6px 0 0;
+    font-size: 10.5px;
+    line-height: 1.6;
+    color: #d9b6bb;
+  }
+  .doc-error-raw {
+    margin-top: 7px;
+  }
+  .doc-error-raw summary {
+    cursor: pointer;
+    font-size: 10px;
+    color: #b98f95;
+  }
+  .doc-error-raw code {
+    display: block;
+    margin-top: 5px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: #2a1a20;
+    color: #c9a3a8;
+    font-size: 10px;
+    word-break: break-all;
   }
 
   /* ---------- 货物字段 ---------- */
@@ -2015,6 +2185,78 @@
   }
   html[data-theme='light'] .chip.neutral {
     color: #536d81;
+  }
+
+  /* AI 状态条 —— 浅色主题 */
+  html[data-theme='light'] .ai-status-trigger {
+    background: #eff4f8;
+    border-color: #d7e1e9;
+    color: #536d81;
+  }
+  html[data-theme='light'] .ai-status-trigger:hover {
+    border-color: #b9cdda;
+    color: #2f4e63;
+  }
+  html[data-theme='light'] .ai-status-trigger.tone-good {
+    background: #e5f6ef;
+    border-color: #b9e7d1;
+    color: #14704e;
+  }
+  html[data-theme='light'] .ai-status-trigger.tone-warn {
+    background: #fff7e8;
+    border-color: #f0ddbb;
+    color: #9b681d;
+  }
+  html[data-theme='light'] .ai-status-trigger.tone-danger {
+    background: #fff0f1;
+    border-color: #f5cbd0;
+    color: #b64453;
+  }
+  html[data-theme='light'] .ai-status-pop {
+    background: #ffffff;
+    border-color: #d7e1e9;
+    box-shadow: 0 16px 40px #29445a1f;
+  }
+  html[data-theme='light'] .ai-status-item dt {
+    color: #607e91;
+  }
+  html[data-theme='light'] .ai-status-item dd {
+    color: #1d3a4d;
+  }
+  html[data-theme='light'] .ai-status-hint {
+    border-top-color: #e2ebf2;
+    color: #55748a;
+  }
+  html[data-theme='light'] .ai-status-refresh {
+    background: #f2f7fa;
+    border-color: #d7e1e9;
+    color: #3d5c72;
+  }
+  html[data-theme='light'] .ai-status-refresh:hover {
+    border-color: #b9cdda;
+    color: #1d3a4d;
+  }
+
+  /* 单证解析失败 —— 浅色主题 */
+  html[data-theme='light'] .doc-error {
+    background: #fff4f5;
+    border-color: #f2cbd0;
+  }
+  html[data-theme='light'] .doc-error-head {
+    color: #b64453;
+  }
+  html[data-theme='light'] .doc-error-advice {
+    color: #8a5b62;
+  }
+  html[data-theme='light'] .doc-error-raw summary {
+    color: #a97b81;
+  }
+  html[data-theme='light'] .doc-error-raw code {
+    background: #fbe9eb;
+    color: #8a5b62;
+  }
+  html[data-theme='light'] .link-btn:disabled {
+    color: #9db0be;
   }
   html[data-theme='light'] .glass-panel {
     background: linear-gradient(155deg, #fff 0%, #fbfdff 100%);

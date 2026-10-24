@@ -220,3 +220,64 @@ export function parseModelList(payload: unknown): string[] {
   walk(payload, 0)
   return out
 }
+
+/* ============================================================
+ * 限流配额解析（GET /api/v1/quotas）
+ * ------------------------------------------------------------
+ * 实测结论（2026-10-24，真实 Key 验证）：
+ *   - `GET {baseUrl}/models/quota` **不是**额度接口 —— 它是「查单个模型
+ *     详情」的路由，会返回 "The model 'quota' does not exist"（404）。
+ *     社区文章有误。此前用无效 Key 探测时 401 鉴权层先拦截，掩盖了这一点。
+ *   - `GET https://dashscope.aliyuncs.com/api/v1/quotas` 才是真实端点，
+ *     返回的是**限流配额**（每 N 分钟的 token 上限 / 请求数上限）。
+ *   - **免费额度余额没有开放 API**，只能在控制台免费额度页查看。
+ *     脚本必须如实说明，不能拿限流值冒充余额。
+ * ============================================================ */
+
+export interface RateLimitRow {
+  model: string
+  /** 限流窗口内的 token 上限 */
+  tokenLimit: number | null
+  /** 限流窗口长度（分钟） */
+  periodMinutes: number | null
+  /** 请求数上限 */
+  requestLimit: number | null
+  /** 工作空间级 token 上限 */
+  workspaceTokenLimit: number | null
+}
+
+/** 从 /api/v1/quotas 响应中解析限流配额 */
+export function parseRateLimits(payload: unknown): RateLimitRow[] {
+  const out: RateLimitRow[] = []
+  const seen = new Set<string>()
+
+  const visit = (node: unknown, depth: number): void => {
+    if (depth > 6 || node === null || typeof node !== 'object') return
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item, depth + 1)
+      return
+    }
+    const obj = node as Record<string, unknown>
+    const model = pickName(obj)
+    const ml = obj.model_limit
+    if (model && ml && typeof ml === 'object' && !Array.isArray(ml)) {
+      if (!seen.has(model)) {
+        seen.add(model)
+        const mlObj = ml as Record<string, unknown>
+        const wl = obj.workspace_limit
+        const wlObj = wl && typeof wl === 'object' && !Array.isArray(wl) ? (wl as Record<string, unknown>) : null
+        out.push({
+          model,
+          tokenLimit: asNumber(mlObj.usage_limit),
+          periodMinutes: asNumber(mlObj.usage_limit_period),
+          requestLimit: asNumber(mlObj.request_limit),
+          workspaceTokenLimit: wlObj ? asNumber(wlObj.usage_limit) : null,
+        })
+      }
+    }
+    for (const v of Object.values(obj)) visit(v, depth + 1)
+  }
+
+  visit(payload, 0)
+  return out
+}

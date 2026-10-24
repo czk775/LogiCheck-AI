@@ -1,23 +1,29 @@
 /* ============================================================
-   免费额度查询脚本（npm run ai:quota）
-
-   用途：一条命令查看「我还有多少免费 token、什么时候过期、够不够用」，
-        避免反复切控制台页面。
-
-   数据来源：
-     - 主源：GET {AI_BASE_URL}/models/quota（百炼开放接口，返回免费额度余量）
-     - 兜底：若该端点不可用，明确提示改看控制台（不编造数据）
-
-   诚实边界：
-     - 只读，不改任何配置
-     - 不打印密钥
-     - 接口失败时如实报错，不用估算值冒充真实余额
-   ============================================================ */
+ * 配额与模型状态查询脚本（npm run ai:quota）
+ *
+ * 用途：一条命令查看「我们配的模型能不能用、限流是多少、还剩多少免费额度」。
+ *
+ * 数据来源（均已用真实 Key 实测确认）：
+ *   - 限流配额：GET https://dashscope.aliyuncs.com/api/v1/quotas
+ *       返回每模型的「每 N 分钟 token 上限 / 请求数上限」
+ *   - 免费额度余额：**没有开放 API**，只能看控制台免费额度页
+ *       （脚本会明确指出这一点，不拿限流值冒充余额）
+ *
+ * 历史踩坑（勿回退）：
+ *   GET {AI_BASE_URL}/models/quota **不是**额度接口 —— 它是「查单个模型详情」
+ *   的路由，返回 "The model 'quota' does not exist"。社区文章有误。
+ *   早先用无效 Key 探测时 401 鉴权层先拦截，误以为端点存在。
+ *
+ * 诚实边界：
+ *   - 只读，不改任何配置
+ *   - 不打印密钥
+ *   - 接口失败时如实报错，不用估算值冒充真实余额
+ * ============================================================ */
 
 import { readFileSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parseQuotaRows, hasUsableQuota, isVisionModel, daysUntil, resolveCandidate, findUsableModels } from './lib/quota-parse.ts'
+import { parseRateLimits, isVisionModel } from './lib/quota-parse.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SERVER_DIR = join(HERE, '..')
@@ -51,9 +57,9 @@ async function main(): Promise<void> {
   const model = env.AI_MODEL?.trim() || 'qwen3.8-flash'
   const visionModel = env.AI_VISION_MODEL?.trim() || 'qwen3.8-omni-flash'
 
-  console.log('=== LogiCheck AI · 免费额度查询 ===\n')
+  console.log('=== LogiCheck AI · 配额与模型状态 ===\n')
   console.log('配置文件：', ENV_PATH, existsSync(ENV_PATH) ? '（已找到）' : '（不存在）')
-  console.log('查询地址：', baseUrl)
+  console.log('接入地址：', baseUrl)
   console.log('关注模型：', model, '|', visionModel, '\n')
 
   if (!apiKey) {
@@ -65,7 +71,9 @@ async function main(): Promise<void> {
     process.exit(1)
   }
 
-  const url = `${baseUrl}/models/quota`
+  // 真实限流配额端点（不在 compatible-mode 路径下，需用官方域名）
+  const origin = baseUrl.replace(/\/compatible-mode\/v1$/, '')
+  const url = `${origin}/api/v1/quotas?page_size=100`
   try {
     const res = await fetch(url, {
       method: 'GET',
@@ -93,104 +101,73 @@ async function main(): Promise<void> {
       if (res.status === 401 || res.status === 403) {
         console.error('  - Key 无效或与接入地址不属同一地域（国内 Key 配 dashscope.aliyuncs.com）')
         console.error('  - Key 已被删除或停用')
-      } else if (res.status === 404) {
-        console.error('  - 该服务商可能不支持此查询接口，请改看控制台免费额度页面')
       }
       console.error('\n控制台查看：https://bailian.console.aliyun.com/cn-beijing/costing-balance/free-quota')
       process.exit(1)
     }
 
-    const rows = parseQuotaRows(payload)
+    const rows = parseRateLimits(payload)
 
     if (rows.length === 0) {
-      console.log('⚠ 接口请求成功，但没有解析出额度条目。')
+      console.log('⚠ 接口请求成功，但没有解析出限流条目。')
       console.log('  原始响应（截断 800 字符）：')
       console.log(JSON.stringify(payload, null, 2).slice(0, 800))
-      console.log('\n请到控制台确认：https://bailian.console.aliyun.com/cn-beijing/costing-balance/free-quota')
       process.exit(0)
     }
 
-    console.log('✓ 查询成功\n')
-    const usable = findUsableModels(rows)
+    console.log(`✓ 查询成功（服务端共 ${rows.length} 个模型的限流配置）\n`)
 
-    console.log('【1】.env 当前配置的模型')
+    console.log('【1】我们配置的模型 · 限流情况')
     console.log('-'.repeat(72))
     for (const m of [model, visionModel]) {
-      const r = resolveCandidate(rows, m)
-      if (r.matchType === 'none') {
-        console.log(`  ${m.padEnd(24)} ✗ 不在额度列表中（该模型可能未获发新人免费额度）`)
-      } else {
-        const days = daysUntil(r.row!.expiresAt)
-        const dayText = days === null ? '到期未知' : days < 0 ? `已过期 ${-days} 天` : `剩 ${days} 天`
-        const kind = isVisionModel(r.row!.model) ? '视觉' : '文本'
-        console.log(
-          `  ${m.padEnd(24)} ✓ ${kind}｜剩余 ${r.row!.remaining!.toLocaleString('en-US')} token` +
-            `｜到期 ${r.row!.expiresAt ?? '未知'}（${dayText}）｜匹配 ${r.matchType}`,
-        )
+      const hit = rows.find((r) => r.model === m)
+      if (!hit) {
+        console.log(`  ${m.padEnd(24)} ✗ 未在限流配置中找到该模型`)
+        continue
       }
+      const kind = isVisionModel(hit.model) ? '视觉' : '文本'
+      const tokenText =
+        hit.tokenLimit !== null
+          ? `${hit.tokenLimit.toLocaleString('en-US')} token / ${hit.periodMinutes ?? '?'} 分钟`
+          : '未设 token 上限'
+      const reqText = hit.requestLimit !== null ? `，${hit.requestLimit} 请求/窗口` : ''
+      console.log(`  ${m.padEnd(24)} ✓ ${kind}｜${tokenText}${reqText}`)
     }
 
     console.log('\n【2】可用的视觉 / OCR 模型（图片与扫描件识别必需）')
     console.log('-'.repeat(72))
-    if (usable.vision.length === 0) {
-      console.log('  （额度列表中没有视觉模型 → 扫描件与图片 OCR 无法走 AI，需改用文本模型或充值）')
+    const visionRows = rows.filter((r) => isVisionModel(r.model))
+    if (visionRows.length === 0) {
+      console.log('  （没有视觉模型 → 扫描件与图片 OCR 无法走 AI）')
     } else {
-      for (const r of usable.vision.slice(0, 15)) {
-        const days = daysUntil(r.expiresAt)
-        const dayText = days === null ? '' : days < 0 ? '已过期' : `剩 ${days} 天`
-        console.log(
-          '  ' + r.model.padEnd(30) + (r.remaining!.toLocaleString('en-US') + ' token').padStart(16) +
-            '  ' + (r.expiresAt ?? '—').padEnd(12) + dayText,
-        )
+      for (const r of visionRows.slice(0, 12)) {
+        const tokenText = r.tokenLimit !== null ? `${r.tokenLimit.toLocaleString('en-US')} / ${r.periodMinutes ?? '?'}min` : '—'
+        console.log('  ' + r.model.padEnd(34) + tokenText.padStart(18))
       }
     }
 
     console.log('\n【3】可用的文本模型（PDF 文本层字段提取用）')
     console.log('-'.repeat(72))
-    if (usable.text.length === 0) {
-      console.log('  （额度列表中没有文本模型）')
+    const textRows = rows.filter((r) => !isVisionModel(r.model))
+    if (textRows.length === 0) {
+      console.log('  （没有文本模型）')
     } else {
-      for (const r of usable.text.slice(0, 15)) {
-        const days = daysUntil(r.expiresAt)
-        const dayText = days === null ? '' : days < 0 ? '已过期' : `剩 ${days} 天`
-        console.log(
-          '  ' + r.model.padEnd(30) + (r.remaining!.toLocaleString('en-US') + ' token').padStart(16) +
-            '  ' + (r.expiresAt ?? '—').padEnd(12) + dayText,
-        )
+      for (const r of textRows.slice(0, 12)) {
+        const tokenText = r.tokenLimit !== null ? `${r.tokenLimit.toLocaleString('en-US')} / ${r.periodMinutes ?? '?'}min` : '—'
+        console.log('  ' + r.model.padEnd(34) + tokenText.padStart(18))
       }
     }
 
-    console.log('\n【4】全部额度条目（' + rows.length + ' 条）')
+    console.log('\n【4】免费额度余额')
     console.log('-'.repeat(72))
-    console.log('模型'.padEnd(34) + '剩余 token'.padStart(16) + '到期'.padStart(14))
-    for (const r of rows.slice(0, 100)) {
-      const remain = r.remaining!.toLocaleString('en-US')
-      const exp = r.expiresAt ?? '—'
-      const flag = isVisionModel(r.model) ? ' [视觉]' : ''
-      console.log((r.model + flag).padEnd(34) + remain.padStart(16) + exp.padStart(14))
-    }
-
-    console.log('\n【5】建议的 .env 配置（可直接抄）')
-    console.log('-'.repeat(72))
-    const pickVision = usable.vision[0]?.model
-    const pickText = usable.text[0]?.model
-    if (pickText) {
-      console.log('AI_MODEL=' + pickText)
-    } else {
-      console.log('AI_MODEL=（无可用文本模型，需充值或换账号）')
-    }
-    if (pickVision) {
-      console.log('AI_VISION_MODEL=' + pickVision)
-    } else if (pickText) {
-      console.log('AI_VISION_MODEL=' + pickText + '   ← 无视觉模型，暂用文本模型（无法识别图片/扫描件）')
-    } else {
-      console.log('AI_VISION_MODEL=（无可用模型）')
-    }
-    console.log('EXTRACTION_PROVIDER=ai')
+    console.log('  ⚠ 百炼未开放「免费额度余额」查询 API —— 上面的限流值 ≠ 剩余额度。')
+    console.log('  实际余额请看控制台（能看到剩余 token、总量、到期日）：')
+    console.log('    https://bailian.console.aliyun.com/cn-beijing/costing-balance/free-quota')
+    console.log('  建议在该页开启「免费额度用完即停」，避免意外从余额扣费。')
 
     console.log('\n用量参考：')
     console.log('  一次完整联调（自检 + 端到端）约消耗 3~6 万 token')
-    console.log('  100 万 token 大约可支撑 15~30 次完整联调')
+    console.log('  qwen3.8-flash 限流 50 万 token/6 分钟，单次联调远低于限流，不会触发 429')
     console.log('  若剩余额度偏低，优先把 EXTRACTION_PROVIDER 改回 deterministic')
     process.exit(0)
   } catch (err) {
