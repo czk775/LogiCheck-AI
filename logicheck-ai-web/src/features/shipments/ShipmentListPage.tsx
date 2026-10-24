@@ -7,7 +7,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { useStore } from '../../store/AppStore'
 import { SHIPMENT_STATUS_META, countIssues, statusShip } from '../../services/domain/shipmentStatus'
 import { formatTime } from '../../utils/format'
-import { DEMO_NOTICE } from '../../constants'
+import { demoNotice } from '../../constants'
 import type { Shipment } from '../../types/domain'
 
 /** 货物管理列表页 —— 与已确认原型一致 */
@@ -163,7 +163,7 @@ export function ShipmentListPage() {
         </table>
       </div>
 
-      <div className="footer-note">{DEMO_NOTICE}</div>
+      <div className="footer-note">{demoNotice(state.aiStatus)}</div>
     </section>
   )
 }

@@ -2,7 +2,7 @@ import { Icon } from '../../components/Icon'
 import { Button } from '../../components/Button'
 import { Modal } from '../../components/Modal'
 import { useStore } from '../../store/AppStore'
-import { DEMO_NOTICE } from '../../constants'
+import { demoNotice } from '../../constants'
 
 /** 体验指南弹窗 —— 与原型 guide 一致 */
 export function GuideModal() {
@@ -45,10 +45,10 @@ export function GuideModal() {
 
 /** 关于此演示弹窗 —— 与原型 about 一致 */
 export function AboutModal() {
-  const { closeModal } = useStore()
+  const { closeModal, state } = useStore()
   return (
     <Modal title="关于此演示" onClose={closeModal} testId="about-modal">
-      <p>{DEMO_NOTICE}</p>
+      <p>{demoNotice(state.aiStatus)}</p>
       <div className="detail-list">
         <div>登录、账号隔离均为浏览器本地体验，不是生产级身份验证。</div>
         <div>演示案例包含人工制作的数据样例，可验证结构化核验和异常状态流转。</div>

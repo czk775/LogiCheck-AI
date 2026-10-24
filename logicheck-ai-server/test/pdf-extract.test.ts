@@ -65,3 +65,32 @@ endbfrange`
   assert.equal(map.get(0x30), 'C')
   assert.equal(map.get(0x32), 'E')
 })
+
+/* ---------- ASCII85 过滤链（真实世界 PDF 极常见） ---------- */
+
+test('P7 提取 ASCII85 + FlateDecode 组合过滤链的文本', () => {
+  // ReportLab 默认生成 /Filter [ /ASCII85Decode /FlateDecode ]
+  const pdf = buildSimplePdf(
+    [{ text: 'COMMERCIAL INVOICE' }, { text: 'Invoice No: INV-LCAI-2026-001' }],
+    { compress: true, ascii85: true },
+  )
+  const result = extractPdfText(pdf)
+  const text = result.pages[0].text
+  assert.ok(text.includes('COMMERCIAL INVOICE'), text)
+  assert.ok(text.includes('Invoice No: INV-LCAI-2026-001'), text)
+  assert.deepEqual(result.warnings, [], '有文本层时不应报 no_text_layer')
+})
+
+test('P8 提取单独 ASCII85Decode（不压缩）的文本', () => {
+  const pdf = buildSimplePdf([{ text: 'PACKING LIST' }, { text: 'Quantity: 900 PCS' }], { ascii85: true })
+  const text = extractPdfText(pdf).pages[0].text
+  assert.ok(text.includes('PACKING LIST'), text)
+  assert.ok(text.includes('Quantity: 900 PCS'), text)
+})
+
+test('P9 ASCII85 过滤链的扫描件仍如实判为无文本层', () => {
+  // 组合过滤链不应掩盖「本来就没有文本」这一事实（不能把扫描件伪装成已解析）
+  const pdf = buildSimplePdf([], { compress: true, ascii85: true })
+  const result = extractPdfText(pdf)
+  assert.equal(result.pages[0].text.trim(), '')
+})

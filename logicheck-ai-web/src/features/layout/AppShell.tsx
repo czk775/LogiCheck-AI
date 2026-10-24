@@ -31,6 +31,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const pendingMode = useRef<FileMode>({ kind: 'add' })
 
+  /* 侧栏能力说明必须与真实运行状态一致，不能硬写「尚未接入」 */
+  const aiConnected = state.aiStatus?.configured === true
+  const capabilityText = !REAL
+    ? '所有 AI 提取结果为明确标注的演示数据。上传真实文件仅做本地预览，不连接后端。'
+    : aiConnected
+      ? '身份、货物与单证保存在本机服务器；AI 解析已接通，提取字段可溯源到原文。'
+      : '身份、货物与单证保存在本机服务器；AI 解析尚未接通，当前使用确定性提取。'
+
   const openChooser = useCallback((mode: FileMode) => {
     pendingMode.current = mode
     if (inputRef.current) {
@@ -116,9 +124,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 {REAL ? '本地服务 · SQLite 数据库' : '演示环境 · MOCK 服务'}
               </strong>
               <p>
-                {REAL
-                  ? '身份、货物与单证保存在本机服务器；AI 解析尚未接入，提取字段为演示数据。'
-                  : '所有 AI 提取结果为明确标注的演示数据。上传真实文件仅做本地预览，不连接后端。'}
+                {capabilityText}
               </p>
             </div>
             <button type="button" className="account" onClick={onLogout} title={REAL ? '退出登录' : '退出当前演示账号'}>

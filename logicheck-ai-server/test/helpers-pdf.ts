@@ -11,9 +11,48 @@ export interface PdfLine {
   size?: number
 }
 
+/**
+ * ASCII85 编码（ReportLab 等生成器的默认过滤链：[/ASCII85Decode /FlateDecode]）。
+ * 这是真实世界 PDF 极常见的组合，提取器必须支持。
+ *
+ * 编码规则：每 4 字节 → 5 个字符（值域 33..117，即 '!'..'u'），
+ * 与 PDF 规范（Section 7.4.3）一致，是解码器的严格逆运算。
+ */
+export function ascii85Encode(data: Buffer): Buffer {
+  const out: number[] = []
+  let i = 0
+  for (; i + 4 <= data.length; i += 4) {
+    const value =
+      ((data[i] << 24) >>> 0) + (data[i + 1] << 16) + (data[i + 2] << 8) + data[i + 3]
+    let v = value >>> 0
+    const chunk = [0, 0, 0, 0, 0]
+    for (let k = 4; k >= 0; k--) {
+      chunk[k] = (v % 85) + 33
+      v = Math.floor(v / 85)
+    }
+    out.push(...chunk)
+  }
+  // 末组：不足 4 字节，补零后取 count+1 个字符
+  const rest = data.length - i
+  if (rest > 0) {
+    const value = data[i] << 24 | (rest > 1 ? data[i + 1] << 16 : 0) | (rest > 2 ? data[i + 2] << 8 : 0)
+    let v = value >>> 0
+    const chunk: number[] = []
+    for (let k = 0; k < 5; k++) {
+      chunk.unshift((v % 85) + 33)
+      v = Math.floor(v / 85)
+    }
+    out.push(...chunk.slice(0, rest + 1))
+  }
+  return Buffer.from(out)
+}
+
 /** 生成单页 PDF；lines 自上而下排列 */
-export function buildSimplePdf(lines: PdfLine[], opts: { compress?: boolean; title?: string } = {}): Buffer {
-  const { compress = false, title = 'Test Document' } = opts
+export function buildSimplePdf(
+  lines: PdfLine[],
+  opts: { compress?: boolean; title?: string; ascii85?: boolean } = {},
+): Buffer {
+  const { compress = false, title = 'Test Document', ascii85 = false } = opts
   const escape = (s: string): string => s.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
 
   const contentLines = lines.map((l, i) => {
@@ -22,7 +61,13 @@ export function buildSimplePdf(lines: PdfLine[], opts: { compress?: boolean; tit
     return prefix + `(${escape(l.text)}) Tj`
   })
   const content = `BT\n${contentLines.join('\n')}\nET\n`
-  const contentBytes = compress ? deflateSync(Buffer.from(content, 'latin1')) : Buffer.from(content, 'latin1')
+  let contentBytes = compress ? deflateSync(Buffer.from(content, 'latin1')) : Buffer.from(content, 'latin1')
+  let filter = compress ? ' /Filter /FlateDecode' : ''
+  if (ascii85) {
+    // 组合过滤链：[/ASCII85Decode /FlateDecode]（ReportLab 默认）
+    contentBytes = ascii85Encode(contentBytes)
+    filter = compress ? ' /Filter [ /ASCII85Decode /FlateDecode ]' : ' /Filter /ASCII85Decode'
+  }
 
   const objects: string[] = [
     '<< /Type /Catalog /Pages 2 0 R >>',
@@ -31,8 +76,8 @@ export function buildSimplePdf(lines: PdfLine[], opts: { compress?: boolean; tit
     null as unknown as string, // 占位：内容流对象单独组装
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
   ]
-  const filter = compress ? ' /Filter /FlateDecode' : ''
-  objects[3] = `<< /Length ${contentBytes.length}${filter} >>\nstream\n${contentBytes.toString('latin1')}\nendstream`
+  const filter2 = filter
+  objects[3] = `<< /Length ${contentBytes.length}${filter2} >>\nstream\n${contentBytes.toString('latin1')}\nendstream`
 
   let pdf = '%PDF-1.4\n%\xe2\xe3\xcf\xd3\n'
   const offsets: number[] = []

@@ -3,7 +3,7 @@
 
    支持范围（诚实边界）：
    - 经典 PDF 结构：对象表可被扫描到（未压缩对象表）
-   - FlateDecode 压缩的内容流
+   - 内容流过滤链：FlateDecode / ASCII85Decode / ASCIIHexDecode（按声明顺序组合）
    - 简单字体（WinAnsi/ASCII 文本）与带 /ToUnicode 的 CID 字体
    明确不支持（抛出带原因的错误，绝不编造文本）：
    - 加密 PDF（/Encrypt）
@@ -116,23 +116,113 @@ function collectObjects(buf: Buffer, src: string): Map<number, PdfObject> {
 
 function decodeStream(obj: PdfObject): Buffer | null {
   if (!obj.stream) return null
-  if (/\/Filter\s*\[\s*\/FlateDecode/.test(obj.dict) || /\/Filter\s*\/FlateDecode/.test(obj.dict)) {
-    try {
-      return inflateSync(obj.stream)
-    } catch {
-      // 部分生成器流尾部带多余字节；尝试容忍
-      try {
-        return inflateSync(obj.stream.subarray(0, obj.stream.length - 1))
-      } catch {
-        return null
-      }
+
+  // 按 /Filter 声明的顺序逐级解码（PDF 规范：过滤器按数组顺序从左到右应用）
+  const filters = parseFilters(obj.dict)
+  if (!filters.length) return obj.stream
+
+  let data = obj.stream
+  for (const filter of filters) {
+    if (filter === 'FlateDecode') {
+      const inflated = inflateTolerant(data)
+      if (!inflated) return null
+      data = inflated
+      continue
     }
-  }
-  if (/\/Filter/.test(obj.dict)) {
+    if (filter === 'ASCII85Decode') {
+      const decoded = ascii85Decode(data)
+      if (!decoded) return null
+      data = decoded
+      continue
+    }
+    if (filter === 'ASCIIHexDecode') {
+      const decoded = asciiHexDecode(data)
+      if (!decoded) return null
+      data = decoded
+      continue
+    }
     // DCTDecode（图片）/ LZW / CCITT 等：无法提取文本，交由调用方处理
     return null
   }
-  return obj.stream
+  return data
+}
+
+/** 解析 /Filter（支持单值与数组两种写法） */
+function parseFilters(dict: string): string[] {
+  const m = dict.match(/\/Filter\s*(\[[^\]]*\]|\/[A-Za-z0-9]+)/)
+  if (!m) return []
+  const raw = m[1]
+  const names = raw.startsWith('[')
+    ? [...raw.matchAll(/\/([A-Za-z0-9]+)/g)].map((x) => x[1])
+    : [raw.replace(/^\//, '')]
+  return names
+}
+
+/** FlateDecode：容忍生成器在流尾部追加的多余字节 */
+function inflateTolerant(data: Buffer): Buffer | null {
+  try {
+    return inflateSync(data)
+  } catch {
+    for (const trim of [1, 2]) {
+      try {
+        return inflateSync(data.subarray(0, data.length - trim))
+      } catch {
+        /* 继续尝试 */
+      }
+    }
+    return null
+  }
+}
+
+/** ASCII85Decode：解 <~ ... ~> 为 5 字节组 */
+function ascii85Decode(data: Buffer): Buffer | null {
+  try {
+    let s = data.toString('latin1').replace(/\s/g, '')
+    if (s.startsWith('<~')) s = s.slice(2)
+    const end = s.indexOf('~>')
+    if (end >= 0) s = s.slice(0, end)
+
+    const out: number[] = []
+    let tuple = 0
+    let count = 0
+    for (const ch of s) {
+      // 'z' 表示四个零字节
+      if (ch === 'z' && count === 0) {
+        out.push(0, 0, 0, 0)
+        continue
+      }
+      const code = ch.charCodeAt(0)
+      if (code < 33 || code > 117) return null // 非法字符
+      tuple = tuple * 85 + (code - 33)
+      count++
+      if (count === 5) {
+        out.push((tuple >>> 24) & 255, (tuple >>> 16) & 255, (tuple >>> 8) & 255, tuple & 255)
+        tuple = 0
+        count = 0
+      }
+    }
+    if (count > 0) {
+      // 末组不足 5 字符：补 'u'（84）后取前 count-1 字节
+      for (let i = count; i < 5; i++) tuple = tuple * 85 + 84
+      const last = [(tuple >>> 24) & 255, (tuple >>> 16) & 255, (tuple >>> 8) & 255, tuple & 255]
+      out.push(...last.slice(0, count - 1))
+    }
+    return Buffer.from(out)
+  } catch {
+    return null
+  }
+}
+
+/** ASCIIHexDecode：解 <hex> 为字节 */
+function asciiHexDecode(data: Buffer): Buffer | null {
+  try {
+    const s = data.toString('latin1')
+    const end = s.indexOf('>')
+    const hex = (end >= 0 ? s.slice(0, end) : s).replace(/\s+/g, '')
+    return Buffer.from(hex.length % 2 ? `0${hex}` : hex, 'hex')
+  } catch {
+    return null
+  }
 }
 
 /* ---------- 页树 ---------- */
