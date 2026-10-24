@@ -17,7 +17,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parseQuotaRows, hasUsableQuota } from './lib/quota-parse.ts'
+import { parseQuotaRows, hasUsableQuota, isVisionModel, daysUntil, resolveCandidate, findUsableModels } from './lib/quota-parse.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SERVER_DIR = join(HERE, '..')
@@ -48,8 +48,8 @@ async function main(): Promise<void> {
   const env = { ...process.env, ...readEnvFile(ENV_PATH) }
   const apiKey = env.DASHSCOPE_API_KEY?.trim()
   const baseUrl = (env.AI_BASE_URL?.trim() || 'https://dashscope.aliyuncs.com/compatible-mode/v1').replace(/\/+$/, '')
-  const model = env.AI_MODEL?.trim() || 'qwen-plus'
-  const visionModel = env.AI_VISION_MODEL?.trim() || 'qwen-plus'
+  const model = env.AI_MODEL?.trim() || 'qwen3.8-flash'
+  const visionModel = env.AI_VISION_MODEL?.trim() || 'qwen3.8-omni-flash'
 
   console.log('=== LogiCheck AI · 免费额度查询 ===\n')
   console.log('配置文件：', ENV_PATH, existsSync(ENV_PATH) ? '（已找到）' : '（不存在）')
@@ -111,29 +111,82 @@ async function main(): Promise<void> {
     }
 
     console.log('✓ 查询成功\n')
-    console.log('模型'.padEnd(28) + '剩余 token'.padStart(16) + '总量'.padStart(14) + '到期'.padStart(14))
-    console.log('-'.repeat(72))
-    for (const r of rows.slice(0, 40)) {
-      const remain = r.remaining!.toLocaleString('en-US')
-      const total = r.total !== null ? r.total.toLocaleString('en-US') : '—'
-      const exp = r.expiresAt ?? '—'
-      console.log(r.model.padEnd(28) + remain.padStart(16) + total.padStart(14) + exp.padStart(14))
-    }
+    const usable = findUsableModels(rows)
 
-    console.log('\n我们需要的两个模型：')
+    console.log('【1】.env 当前配置的模型')
+    console.log('-'.repeat(72))
     for (const m of [model, visionModel]) {
-      const ok = hasUsableQuota(rows, m)
-      const hit = rows.find((r) => r.model === m || r.model.startsWith(m))
-      if (!hit) {
-        console.log(`  ${m.padEnd(18)} 未在返回结果中找到（可能无免费额度或已过期）`)
+      const r = resolveCandidate(rows, m)
+      if (r.matchType === 'none') {
+        console.log(`  ${m.padEnd(24)} ✗ 不在额度列表中（该模型可能未获发新人免费额度）`)
       } else {
+        const days = daysUntil(r.row!.expiresAt)
+        const dayText = days === null ? '到期未知' : days < 0 ? `已过期 ${-days} 天` : `剩 ${days} 天`
+        const kind = isVisionModel(r.row!.model) ? '视觉' : '文本'
         console.log(
-          `  ${m.padEnd(18)} 剩余 ${hit.remaining!.toLocaleString('en-US')} token` +
-            `　到期 ${hit.expiresAt ?? '未知'}` +
-            `　${ok ? '✓ 可用' : '✗ 无可用额度'}`,
+          `  ${m.padEnd(24)} ✓ ${kind}｜剩余 ${r.row!.remaining!.toLocaleString('en-US')} token` +
+            `｜到期 ${r.row!.expiresAt ?? '未知'}（${dayText}）｜匹配 ${r.matchType}`,
         )
       }
     }
+
+    console.log('\n【2】可用的视觉 / OCR 模型（图片与扫描件识别必需）')
+    console.log('-'.repeat(72))
+    if (usable.vision.length === 0) {
+      console.log('  （额度列表中没有视觉模型 → 扫描件与图片 OCR 无法走 AI，需改用文本模型或充值）')
+    } else {
+      for (const r of usable.vision.slice(0, 15)) {
+        const days = daysUntil(r.expiresAt)
+        const dayText = days === null ? '' : days < 0 ? '已过期' : `剩 ${days} 天`
+        console.log(
+          '  ' + r.model.padEnd(30) + (r.remaining!.toLocaleString('en-US') + ' token').padStart(16) +
+            '  ' + (r.expiresAt ?? '—').padEnd(12) + dayText,
+        )
+      }
+    }
+
+    console.log('\n【3】可用的文本模型（PDF 文本层字段提取用）')
+    console.log('-'.repeat(72))
+    if (usable.text.length === 0) {
+      console.log('  （额度列表中没有文本模型）')
+    } else {
+      for (const r of usable.text.slice(0, 15)) {
+        const days = daysUntil(r.expiresAt)
+        const dayText = days === null ? '' : days < 0 ? '已过期' : `剩 ${days} 天`
+        console.log(
+          '  ' + r.model.padEnd(30) + (r.remaining!.toLocaleString('en-US') + ' token').padStart(16) +
+            '  ' + (r.expiresAt ?? '—').padEnd(12) + dayText,
+        )
+      }
+    }
+
+    console.log('\n【4】全部额度条目（' + rows.length + ' 条）')
+    console.log('-'.repeat(72))
+    console.log('模型'.padEnd(34) + '剩余 token'.padStart(16) + '到期'.padStart(14))
+    for (const r of rows.slice(0, 100)) {
+      const remain = r.remaining!.toLocaleString('en-US')
+      const exp = r.expiresAt ?? '—'
+      const flag = isVisionModel(r.model) ? ' [视觉]' : ''
+      console.log((r.model + flag).padEnd(34) + remain.padStart(16) + exp.padStart(14))
+    }
+
+    console.log('\n【5】建议的 .env 配置（可直接抄）')
+    console.log('-'.repeat(72))
+    const pickVision = usable.vision[0]?.model
+    const pickText = usable.text[0]?.model
+    if (pickText) {
+      console.log('AI_MODEL=' + pickText)
+    } else {
+      console.log('AI_MODEL=（无可用文本模型，需充值或换账号）')
+    }
+    if (pickVision) {
+      console.log('AI_VISION_MODEL=' + pickVision)
+    } else if (pickText) {
+      console.log('AI_VISION_MODEL=' + pickText + '   ← 无视觉模型，暂用文本模型（无法识别图片/扫描件）')
+    } else {
+      console.log('AI_VISION_MODEL=（无可用模型）')
+    }
+    console.log('EXTRACTION_PROVIDER=ai')
 
     console.log('\n用量参考：')
     console.log('  一次完整联调（自检 + 端到端）约消耗 3~6 万 token')

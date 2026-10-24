@@ -13,6 +13,7 @@
     "migrate": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx/esm src/db/migrate.ts",
     "ai:check": "node --import tsx/esm scripts/ai-check.ts",
     "ai:quota": "node --import tsx/esm scripts/ai-quota.ts",
+    "ai:models": "node --import tsx/esm scripts/ai-models.ts",
     "ai:e2e": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx/esm scripts/ai-e2e.ts",
     "ai:fixtures": "node test/fixtures/real/make-fixtures.mjs"
   },
