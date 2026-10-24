@@ -5,6 +5,7 @@ import { RecheckInfoModal, RuleHelpModal } from './RuleHelpModal'
 import { DeleteDocumentModal, DeleteShipmentModal } from './DeleteModals'
 import { FieldEditModal } from './FieldEditModal'
 import { ReviewModal } from './ReviewModal'
+import { ReopenModal, ResolveModal } from './ResolveModals'
 
 /** 弹窗挂载点：按 UI 状态渲染对应模态 */
 export function ModalHost() {
@@ -31,6 +32,10 @@ export function ModalHost() {
       return <FieldEditModal fieldKey={modal.fieldKey} sourceDocumentId={modal.sourceDocumentId} />
     case 'review':
       return <ReviewModal findingId={modal.findingId} />
+    case 'resolve':
+      return <ResolveModal findingId={modal.findingId} />
+    case 'reopen':
+      return <ReopenModal findingId={modal.findingId} />
     default:
       return null
   }

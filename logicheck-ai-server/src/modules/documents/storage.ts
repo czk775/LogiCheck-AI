@@ -46,11 +46,22 @@ export class FileStorage {
     }
   }
 
-  /** 删除文件及其单证目录（目录内仅该文件时清理，避免残留空目录） */
+  /**
+   * 删除文件；其所在目录仅在「已空」时才清理。
+   * 注意：不能直接递归删目录 —— 同一货物的多份单证共用 <userId>/<shipmentId>/ 目录，
+   * 替换单证时删旧文件会连带删掉刚写入的新文件（曾导致替换后解析报「文件在存储中缺失」）。
+   */
   async remove(key: string): Promise<void> {
     const abs = this.resolveKey(key)
     if (!abs) return
     await rm(abs, { force: true }).catch(() => undefined)
-    await rm(dirname(abs), { recursive: true, force: true }).catch(() => undefined)
+    // 目录为空才删（非空则保留，避免影响同目录其他单证）
+    try {
+      const { readdir } = await import('node:fs/promises')
+      const rest = await readdir(dirname(abs))
+      if (rest.length === 0) await rm(dirname(abs), { recursive: true, force: true }).catch(() => undefined)
+    } catch {
+      /* 目录已不存在或不可读：忽略 */
+    }
   }
 }

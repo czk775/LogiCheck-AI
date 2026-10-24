@@ -118,35 +118,59 @@ export class FindingService {
     return this.shipments.getForUser(userId, shipmentId)!
   }
 
-  /** 与 Mock 一致的 profile 推导：quantity 走跨单证比对，其余直接采用修正值 */
+  /**
+   * 与 Mock 一致的 profile 推导：
+   * - quantity：跨单证比对（不再依赖硬编码的演示文档 ID）
+   * - 其余字段：直接采用人工修正值
+   */
   private recomputeProfile(shipmentId: string, fieldKey: string, value: string): void {
     if (fieldKey === 'quantity') {
-      const inv = this.latestDocField(shipmentId, 'doc-invoice', 'quantity')
-      const pl = this.latestDocField(shipmentId, 'doc-packing', 'quantity')
-      const unit = this.latestDocField(shipmentId, 'doc-invoice', 'unit')
-      const derived =
-        inv && pl
-          ? Number(inv) === Number(pl)
-            ? `${inv} ${unit || 'PCS'}（待重新检查）`
-            : '待确认（存在冲突）'
-          : '证据不足'
+      const derived = this.deriveQuantityProfile(shipmentId)
       this.upsertProfile(shipmentId, 'quantity', derived)
     } else {
       this.upsertProfile(shipmentId, fieldKey, value)
     }
   }
 
-  /** 某文档某字段的最新值（人工修正后的当前值；按 rowid 取最后写入） */
-  private latestDocField(shipmentId: string, docId: string, fieldKey: string): string | null {
-    const row = this.db.get<{ value: string }>(
-      `SELECT f.value AS value FROM extracted_fields f
-       WHERE f.shipment_id = ? AND f.document_id = ? AND f.field_key = ?
-       ORDER BY f.rowid DESC LIMIT 1`,
+  /**
+   * 数量字段的跨单证推导：
+   * - 只有一份单证提供 → 标注证据不足
+   * - 多份单证取值一致 → 显示一致值 + 单位（待重新检查）
+   * - 取值不一致 → 待确认（存在冲突）
+   * 演示货物沿用原型固定的两份单证（发票 / 装箱单），真实货物按实际单证集合比对。
+   */
+  private deriveQuantityProfile(shipmentId: string): string {
+    const rows = this.db.all<{ document_id: string; file_name: string; value: string }>(
+      `SELECT f.document_id AS document_id, d.file_name AS file_name, f.value AS value
+         FROM extracted_fields f JOIN documents d ON d.id = f.document_id
+        WHERE f.shipment_id = ? AND f.field_key = 'quantity'
+        ORDER BY f.rowid ASC`,
       shipmentId,
-      docId,
-      fieldKey,
     )
-    return row?.value ?? null
+    // 同文档取最后一次写入（人工修正后以修正值为准）
+    const latest = new Map<string, { fileName: string; value: string }>()
+    for (const r of rows) latest.set(r.document_id, { fileName: r.file_name, value: r.value })
+
+    const values = [...latest.values()].filter((v) => v.value.trim() !== '')
+    if (!values.length) return '证据不足'
+
+    const unitRow = this.db.get<{ value: string }>(
+      `SELECT f.value AS value FROM extracted_fields f JOIN documents d ON d.id = f.document_id
+        WHERE f.shipment_id = ? AND f.field_key = 'unit' ORDER BY f.rowid DESC LIMIT 1`,
+      shipmentId,
+    )
+    const unit = unitRow?.value?.trim() ?? ''
+
+    if (values.length === 1) {
+      // 单份单证 → 无从交叉验证
+      return `${values[0].value}${unit ? ` ${unit}` : ''}（仅 1 份单证，待交叉验证）`
+    }
+
+    const normalized = values.map((v) => Number(String(v.value).replace(/[^\d.]/g, '')))
+    const allSame = normalized.every((n) => Number.isFinite(n) && n === normalized[0])
+    if (!allSame) return '待确认（存在冲突）'
+
+    return `${values[0].value}${unit ? ` ${unit}` : ''}（待重新检查）`
   }
 
   private upsertProfile(shipmentId: string, key: string, value: string): void {
@@ -185,6 +209,96 @@ export class FindingService {
       )
     })
     return this.getFinding(findingId)!
+  }
+
+  /* ---------- 人工解决异常（阶段四闭环） ---------- */
+
+  /**
+   * 人工判定异常已解决：必须附带处理说明（留痕不可删除）。
+   * 与「人工复核（reviewed）」的区别：reviewed 保留风险，resolved 表示人已确认处理完毕。
+   * 注意：resolved 不代表系统判定通过 —— 后续重跑若仍存在冲突，引擎不会自动重开
+   * （尊重人工结论），但会在处理记录中留下「冲突仍存在」的运行摘要。
+   */
+  resolveFinding(userId: string, findingId: string, note: string): Finding {
+    const row = this.requireFindingOfUser(userId, findingId)
+    if (row.status === 'resolved') {
+      // 已解决：仍允许补充说明（追加留痕），不重复改状态
+      this.appendDecision(row.shipment_id, findingId, note, 'resolve')
+      return this.getFinding(findingId)!
+    }
+    const t = nowIso()
+    this.db.transaction(() => {
+      this.db.run(
+        'INSERT INTO human_decisions (id, finding_id, shipment_id, text, kind, at) VALUES (?, ?, ?, ?, ?, ?)',
+        newId('dec'),
+        findingId,
+        row.shipment_id,
+        note,
+        'resolve',
+        t,
+      )
+      this.db.run('UPDATE findings SET status = ? WHERE id = ?', 'resolved', findingId)
+      this.db.run('UPDATE shipments SET updated_at = ? WHERE id = ?', t, row.shipment_id)
+      this.db.run(
+        'INSERT INTO activities (id, shipment_id, text, at) VALUES (?, ?, ?, ?)',
+        newId('act'),
+        row.shipment_id,
+        `人工解决「${row.title}」：${note}`,
+        t,
+      )
+    })
+    return this.getFinding(findingId)!
+  }
+
+  /** 重新打开异常（人工发现此前解决有误） */
+  reopenFinding(userId: string, findingId: string, note: string): Finding {
+    const row = this.requireFindingOfUser(userId, findingId)
+    const t = nowIso()
+    this.db.transaction(() => {
+      this.db.run(
+        'INSERT INTO human_decisions (id, finding_id, shipment_id, text, kind, at) VALUES (?, ?, ?, ?, ?, ?)',
+        newId('dec'),
+        findingId,
+        row.shipment_id,
+        note,
+        'reopen',
+        t,
+      )
+      this.db.run('UPDATE findings SET status = ? WHERE id = ?', 'open', findingId)
+      this.db.run('UPDATE shipments SET updated_at = ? WHERE id = ?', t, row.shipment_id)
+      this.db.run(
+        'INSERT INTO activities (id, shipment_id, text, at) VALUES (?, ?, ?, ?)',
+        newId('act'),
+        row.shipment_id,
+        `重新打开「${row.title}」：${note}`,
+        t,
+      )
+    })
+    return this.getFinding(findingId)!
+  }
+
+  /** 追加一条人工决定（不改状态） */
+  private appendDecision(shipmentId: string, findingId: string, note: string, kind: string): void {
+    const t = nowIso()
+    this.db.transaction(() => {
+      this.db.run(
+        'INSERT INTO human_decisions (id, finding_id, shipment_id, text, kind, at) VALUES (?, ?, ?, ?, ?, ?)',
+        newId('dec'),
+        findingId,
+        shipmentId,
+        note,
+        kind,
+        t,
+      )
+      this.db.run('UPDATE shipments SET updated_at = ? WHERE id = ?', t, shipmentId)
+      this.db.run(
+        'INSERT INTO activities (id, shipment_id, text, at) VALUES (?, ?, ?, ?)',
+        newId('act'),
+        shipmentId,
+        `补充处理说明：${note}`,
+        t,
+      )
+    })
   }
 
   /* ---------- 规则人工跟进 ---------- */
@@ -413,6 +527,14 @@ export class FindingService {
     )
     if (!row || row.user_id !== userId) throw errors.notFound('异常不存在或已被删除')
     return row
+  }
+
+  /** 异常详情（公开接口，带归属校验：他人异常一律 404） */
+  getFindingForUser(userId: string, findingId: string): Finding {
+    this.requireFindingOfUser(userId, findingId)
+    const finding = this.getFinding(findingId)
+    if (!finding) throw errors.notFound('异常不存在')
+    return finding
   }
 
   private getFinding(findingId: string): Finding | null {

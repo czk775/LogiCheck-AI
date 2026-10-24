@@ -29,6 +29,7 @@ import type {
   RecordDecisionRequest,
   RecheckReport,
   RegisterRequest,
+  ResolveFindingRequest,
   UpdateFieldRequest,
   UploadDocumentsRequest,
   UploadRejection,
@@ -430,6 +431,35 @@ export class MockLogiCheckApi implements LogiCheckApi {
       f.notes.unshift({ id: uid('note'), text: req.note, at: now(), kind: 'review' })
       f.status = 'reviewed'
       s.activities.unshift({ text: `人工复核「${f.title}」：${req.note}`, at: now() })
+      s.updatedAt = now()
+    })
+    return (await this.getShipment(req.shipmentId))!.findings.find((f) => f.id === req.findingId)!
+  }
+
+  async resolveFinding(req: ResolveFindingRequest): Promise<Finding> {
+    this.mutate((shipments) => {
+      const s = this.findShipment(shipments, req.shipmentId)
+      const f = s.findings.find((x) => x.id === req.findingId)
+      if (!f) throw new Error('异常不存在')
+      if (f.status !== 'resolved') {
+        f.status = 'resolved'
+        s.activities.unshift({ text: `人工解决「${f.title}」：${req.note}`, at: now() })
+      }
+      // 已解决也允许补充说明（留痕追加，不重复改状态）
+      f.notes.unshift({ id: uid('note'), text: req.note, at: now(), kind: 'resolve' })
+      s.updatedAt = now()
+    })
+    return (await this.getShipment(req.shipmentId))!.findings.find((f) => f.id === req.findingId)!
+  }
+
+  async reopenFinding(req: ResolveFindingRequest): Promise<Finding> {
+    this.mutate((shipments) => {
+      const s = this.findShipment(shipments, req.shipmentId)
+      const f = s.findings.find((x) => x.id === req.findingId)
+      if (!f) throw new Error('异常不存在')
+      f.status = 'open'
+      f.notes.unshift({ id: uid('note'), text: req.note, at: now(), kind: 'reopen' })
+      s.activities.unshift({ text: `重新打开「${f.title}」：${req.note}`, at: now() })
       s.updatedAt = now()
     })
     return (await this.getShipment(req.shipmentId))!.findings.find((f) => f.id === req.findingId)!

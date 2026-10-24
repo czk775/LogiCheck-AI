@@ -75,11 +75,18 @@ export interface RecordDecisionRequest {
   note: string
 }
 
+/** 人工解决 / 重新打开异常（阶段四闭环） */
+export interface ResolveFindingRequest {
+  shipmentId: string
+  findingId: string
+  note: string
+}
+
 export interface RecheckReport {
   shipmentId: string
   ran: boolean
-  /** false 时的原因（如后端未接入） */
-  reason?: 'ai_not_connected' | 'no_change'
+  /** false 时的原因（如后端未接入 / 无已解析单证） */
+  reason?: 'ai_not_connected' | 'no_documents' | 'no_change'
   run?: ProcessingRun
   summary: string
 }
@@ -124,6 +131,10 @@ export interface LogiCheckApi {
 
   /* 异常与人工复核（EXC-01 / RES-01） */
   recordHumanDecision(req: RecordDecisionRequest): Promise<Finding>
+  /** 人工解决异常：必须附处理说明，留痕不可删除 */
+  resolveFinding(req: ResolveFindingRequest): Promise<Finding>
+  /** 重新打开异常（人工发现此前解决有误） */
+  reopenFinding(req: ResolveFindingRequest): Promise<Finding>
   /** 规则抽屉中「记录人工意见」：无对应异常时创建人工跟进项（仅演示货物有检查结果） */
   createRuleFollowUp(shipmentId: string, ruleKey: string): Promise<Finding>
 

@@ -67,6 +67,8 @@ export class DocumentService {
     private readonly shipments: { getForUser: (userId: string, id: string) => Shipment | null },
     /** 解析入队回调（阶段二：上传/重试后触发 ParsePipeline） */
     private readonly enqueueParse: (documentId: string) => void = () => {},
+    /** 核验刷新回调（阶段四：单证被移除后，现有核验结论已过时，需重跑） */
+    private readonly refreshCheck: (shipmentId: string) => void = () => {},
   ) {
     this.storage = new FileStorage(config)
   }
@@ -254,6 +256,8 @@ export class DocumentService {
         nowIso(),
       )
     })
+    // 证据已消失 → 现有核验结论过时，立即重跑（无已解析单证时引擎不产生结论）
+    this.refreshCheck(row.shipment_id)
     return true
   }
 

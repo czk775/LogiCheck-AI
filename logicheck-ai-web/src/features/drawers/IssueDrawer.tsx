@@ -9,6 +9,14 @@ import { isEngineMode } from '../../services/domain/runMode'
 import { formatTime } from '../../utils/format'
 import type { Finding, Shipment } from '../../types/domain'
 
+/** 人工决定类型的中文标签（处理记录里区分复核 / 解决 / 重开） */
+const DECISION_KIND_LABEL: Record<string, string> = {
+  review: '人工复核',
+  accept_risk: '接受风险',
+  resolve: '标记已处理',
+  reopen: '重新打开',
+}
+
 /** 异常详情抽屉（宽）—— 与原型 issueDrawer 一致：证据 / 判断 / 行动 / 记录 */
 export function IssueDrawer({ shipment, finding }: { shipment: Shipment; finding: Finding }) {
   const { state, closeDrawer, selectEvidence, openModal, recheck } = useStore()
@@ -141,6 +149,25 @@ export function IssueDrawer({ shipment, finding }: { shipment: Shipment; finding
             <Button icon="clipboard" onClick={() => openModal({ type: 'review', findingId: finding.id })} data-testid="add-review">
               人工复核
             </Button>
+            {finding.status === 'resolved' ? (
+              <Button
+                icon="refresh"
+                onClick={() => openModal({ type: 'reopen', findingId: finding.id })}
+                data-testid="reopen-finding"
+              >
+                重新打开
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                icon="check"
+                onClick={() => openModal({ type: 'resolve', findingId: finding.id })}
+                data-testid="resolve-finding"
+                data-finding-id={finding.id}
+              >
+                标记已处理
+              </Button>
+            )}
             <Button variant="primary" icon="refresh" onClick={() => void recheck()} data-testid="recheck-in-drawer">
               重新检查
             </Button>
@@ -153,14 +180,17 @@ export function IssueDrawer({ shipment, finding }: { shipment: Shipment; finding
               <div className="activity-entry" key={n.id}>
                 <strong>{n.text}</strong>
                 <small>
-                  {formatTime(n.at)} · 人工复核
+                  {formatTime(n.at)} · {DECISION_KIND_LABEL[n.kind] ?? '人工复核'}
                 </small>
               </div>
             ))
           ) : (
             <p className="text-note">暂无人工处理记录</p>
           )}
-          <p className="text-note">人工已复核不代表核验通过；重新检查后若冲突依然存在，异常继续保留。</p>
+          <p className="text-note">
+            人工已复核不代表核验通过，风险继续保留；「标记已处理」表示你已人工完成处置并写入说明，记录不可删除，
+            重新检查不会自动撤销该判断 —— 如需推翻请用「重新打开」。
+          </p>
         </div>
       </div>
     </Drawer>

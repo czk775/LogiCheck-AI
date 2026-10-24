@@ -41,6 +41,12 @@ const PDF_RULES: FieldRule[] = [
   { key: 'product', label: /(?:Description\s*of\s*(?:Goods|Products)|Product|Commodity|Description)\s*[.:\s]*(.+)/i },
   { key: 'model', label: /(?:Model(?:\s*No\.?)?|Type)\s*[.:\s]*([A-Za-z0-9][A-Za-z0-9\-\/ ]{1,30})/i },
   { key: 'quantity', label: /(?:Total\s*Quantity|Quantity|Qty)\s*[.:\s]*([\d.,]+)\s*([A-Za-z]+)?/i, normalize: (raw) => normalizeQuantity(raw) },
+  {
+    // 计量单位：从数量标签行捕获（如「Quantity: 1000 PCE」→「PCE」）
+    key: 'unit',
+    label: /(?:Total\s*Quantity|Quantity|Qty)\s*[.:\s]*[\d.,]+\s*([A-Za-z]{1,12})\b/i,
+    normalize: (raw) => raw.trim().toUpperCase(),
+  },
   { key: 'unit_price', label: /(?:Unit\s*Price|Price)\s*[.:\s]*(?:([A-Z]{3})\s*)?([\d.,]+)/i, valueGroups: [1, 2], normalize: (raw) => {
       const a = normalizeAmount(raw)
       return a ? a.amount : null

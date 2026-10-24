@@ -29,6 +29,8 @@ export type UiModal =
   | { type: 'delete-document'; documentId: string }
   | { type: 'field-edit'; fieldKey: string; sourceDocumentId?: string }
   | { type: 'review'; findingId: string }
+  | { type: 'resolve'; findingId: string }
+  | { type: 'reopen'; findingId: string }
 
 export type UiDrawer =
   | { type: 'issue'; findingId: string }
@@ -129,6 +131,10 @@ export interface AppStoreValue {
   /* 异常 / 字段 / 复核 / 重检 */
   updateField: (fieldKey: string, sourceDocumentId: string, value: string) => Promise<void>
   recordReview: (findingId: string, note: string) => Promise<void>
+  /** 人工解决异常（必须附处理说明） */
+  resolveFinding: (findingId: string, note: string) => Promise<void>
+  /** 重新打开异常 */
+  reopenFinding: (findingId: string, note: string) => Promise<void>
   followUpRule: (ruleKey: RuleKey) => Promise<void>
   recheck: () => Promise<void>
   /* UI */
@@ -353,6 +359,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'ui/drawer', drawer: null })
         dispatch({ type: 'ui/modal', modal: { type: 'review', findingId: finding.id } })
         await syncShipments()
+      },
+
+      resolveFinding: async (findingId, note) => {
+        const shipment = requireActive()
+        const text = note.trim()
+        if (text.length < 3) {
+          push('请填写处理说明，说明是如何处理的', 'error')
+          return
+        }
+        await api.resolveFinding({ shipmentId: shipment.id, findingId, note: text })
+        dispatch({ type: 'ui/modal', modal: null })
+        await syncShipments()
+        push('已标记为人工处理完毕。处理说明已留档，可随时重新打开。')
+      },
+
+      reopenFinding: async (findingId, note) => {
+        const shipment = requireActive()
+        const text = note.trim()
+        if (text.length < 3) {
+          push('请填写重新打开的原因', 'error')
+          return
+        }
+        await api.reopenFinding({ shipmentId: shipment.id, findingId, note: text })
+        dispatch({ type: 'ui/modal', modal: null })
+        await syncShipments()
+        push('异常已重新打开。')
       },
 
       recheck: async () => {

@@ -457,6 +457,31 @@ async function main() {
     await waitFor(cdp, `document.body.textContent.includes('人工复核意见已保存')`, 5000, 'review saved')
     check('G1 人工复核保存且异常仍保留（不等于已解决）', await cdp.eval(`document.querySelectorAll('[data-testid="issue-item"]').length === 2 && document.body.textContent.includes('人工已复核')`))
 
+    /* 阶段四：人工解决异常 → 重新打开 */
+    // 记录当前抽屉对应异常的 id（用于后续精确重新打开）
+    await cdp.eval(`window.__gFindingId = document.querySelector('[data-testid="issue-drawer"]')?.getAttribute('data-finding-id') || (() => { const btn = document.querySelector('[data-testid="resolve-finding"]'); return btn ? btn.getAttribute('data-finding-id') : '' })()`)
+    await cdp.eval(`document.querySelector('[data-testid="resolve-finding"]').click()`)
+    await waitFor(cdp, `document.querySelector('[data-testid="resolve-note"]')`, 5000, 'resolve modal')
+    check('G5 解决弹窗要求填写处理说明', await cdp.eval(`(() => { const t = document.querySelector('[data-testid="resolve-modal"]')?.textContent ?? ''; return t.includes('标记为已处理') && t.includes('无法删除') })()`))
+    await cdp.eval(`(() => { const t = document.querySelector('[data-testid="resolve-note"]'); window.__t.setNativeValue(t, '已核对原件并与供应商确认，按装箱单为准'); })()`)
+    await cdp.eval(`document.querySelector('[data-testid="save-resolve"]').click()`)
+    await waitFor(cdp, `document.body.textContent.includes('已标记为人工处理完毕')`, 5000, 'resolve saved')
+    check('G6 人工解决后异常从待处理列表消失', await cdp.eval(`document.querySelectorAll('[data-testid="issue-item"][data-finding-status]:not([data-finding-status="resolved"])').length === 1 && document.body.textContent.includes('查看已处理')`))
+
+    // 重新打开：展开「已处理」分组，按 id 精确找到刚解决的那一项
+    await waitFor(cdp, `document.querySelector('[data-testid="toggle-resolved"]')`, 5000, 'resolved toggle')
+    await cdp.eval(`document.querySelector('[data-testid="toggle-resolved"]').click()`)
+    await waitFor(cdp, `document.querySelector('[data-finding-status="resolved"]')`, 5000, 'resolved item')
+    await cdp.eval(`(() => { const el = document.querySelector('[data-finding-id="' + window.__gFindingId + '"]'); if (el) el.click(); })()`)
+    await waitFor(cdp, `document.querySelector('[data-testid="reopen-finding"]')`, 5000, 'reopen button')
+    check('G7 已解决异常提供「重新打开」入口', await cdp.eval(`!!document.querySelector('[data-testid="reopen-finding"]')`))
+    await cdp.eval(`document.querySelector('[data-testid="reopen-finding"]').click()`)
+    await waitFor(cdp, `document.querySelector('[data-testid="reopen-note"]')`, 5000, 'reopen modal')
+    await cdp.eval(`(() => { const t = document.querySelector('[data-testid="reopen-note"]'); window.__t.setNativeValue(t, '供应商称装箱单有误，需继续追查'); })()`)
+    await cdp.eval(`document.querySelector('[data-testid="save-reopen"]').click()`)
+    await waitFor(cdp, `document.body.textContent.includes('异常已重新打开')`, 5000, 'reopen saved')
+    check('G8 重新打开后异常回到待处理', await cdp.eval(`document.querySelectorAll('[data-testid="issue-item"][data-finding-status]:not([data-finding-status="resolved"])').length === 2`))
+
     /* ===== H. 规则抽屉 ===== */
     await cdp.eval(`document.querySelectorAll('[data-testid="rule-row"]')[0].click()`)
     await waitFor(cdp, `document.querySelector('[data-testid="rule-drawer"]')`, 5000, 'rule drawer')
@@ -595,8 +620,16 @@ async function main() {
     await goto(`${BASE}/shipments/SHP-2026-001`)
     await waitFor(cdp, `document.querySelector('.workspace-title')`, 8000, 'refresh restore')
     check('M1 刷新工作台 URL 直接恢复（会话保持）', await cdp.eval(`document.querySelector('.workspace-title')?.textContent.includes('蓝牙音箱')`))
-    check('M2 重检结果持久化（数量冲突保持已解决）', await cdp.eval(`document.querySelectorAll('[data-testid="issue-item"]').length === 2 && !document.body.textContent.includes('商业发票与装箱单数量不一致')`))
-    check('M3 人工复核记录持久化', await cdp.eval(`document.body.textContent.includes('人工已复核')`))
+    check('M2 重检结果持久化（数量冲突保持已解决）', await cdp.eval(`document.querySelectorAll('[data-testid="issue-item"]:not([data-finding-status="resolved"])').length === 2 && !document.body.textContent.includes('商业发票与装箱单数量不一致')`))
+    check('M3 人工复核记录持久化（处理记录中留有复核意见）', await cdp.eval(`(() => {
+      const btn = Array.from(document.querySelectorAll('.section-link')).find(b => b.textContent.includes('处理记录'))
+      if (!btn) return false
+      btn.click()
+      return true
+    })()`) === true)
+    await waitFor(cdp, `document.querySelector('[data-testid="activity-drawer"]')`, 5000, 'activity drawer')
+    check('M3b 处理记录含人工复核意见', await cdp.eval(`document.querySelector('[data-testid="activity-drawer"]')?.textContent.includes('人工复核')`))
+    await cdp.eval(`document.querySelector('[data-testid="activity-drawer"] .close').click()`)
 
     /* ===== N. 退出 → 重登 ===== */
     await cdp.eval(`document.querySelector('.account').click()`)

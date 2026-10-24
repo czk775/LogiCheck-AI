@@ -31,6 +31,13 @@ export function registerFindingRoutes(app: FastifyInstance, auth: AuthService, s
     return { shipment }
   })
 
+  /* 异常详情 */
+  app.get('/api/findings/:id', async (req) => {
+    const userId = userIdOf(req)
+    const { id } = req.params as { id: string }
+    return { finding: svc.getFindingForUser(userId, id) }
+  })
+
   /* 人工复核记录 */
   app.post('/api/findings/:id/decisions', async (req) => {
     const userId = userIdOf(req)
@@ -40,6 +47,28 @@ export function registerFindingRoutes(app: FastifyInstance, auth: AuthService, s
       throw errors.badRequest('请填写具体的复核意见')
     }
     return { finding: svc.recordDecision(userId, id, body.note.trim()) }
+  })
+
+  /* 人工解决异常（阶段四闭环）：必须附处理说明，留痕不可删除 */
+  app.post('/api/findings/:id/resolve', async (req) => {
+    const userId = userIdOf(req)
+    const { id } = req.params as { id: string }
+    const body = (req.body ?? {}) as { note?: unknown }
+    if (typeof body.note !== 'string' || body.note.trim().length < 3) {
+      throw errors.badRequest('请填写处理说明，说明是如何处理的')
+    }
+    return { finding: svc.resolveFinding(userId, id, body.note.trim()) }
+  })
+
+  /* 重新打开异常（人工发现此前解决有误） */
+  app.post('/api/findings/:id/reopen', async (req) => {
+    const userId = userIdOf(req)
+    const { id } = req.params as { id: string }
+    const body = (req.body ?? {}) as { note?: unknown }
+    if (typeof body.note !== 'string' || body.note.trim().length < 3) {
+      throw errors.badRequest('请填写重新打开的原因')
+    }
+    return { finding: svc.reopenFinding(userId, id, body.note.trim()) }
   })
 
   /* 规则人工跟进 */

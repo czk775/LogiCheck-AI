@@ -44,7 +44,7 @@ export interface HumanDecision {
   id: string
   text: string
   at: string
-  kind: 'review' | 'accept_risk' | 'resolve'
+  kind: 'review' | 'accept_risk' | 'resolve' | 'reopen'
 }
 
 export type FindingKind = 'cross' | 'rule' | 'extraction'

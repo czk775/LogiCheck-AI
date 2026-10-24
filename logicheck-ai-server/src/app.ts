@@ -99,13 +99,28 @@ export function buildApp(options: { config?: AppConfig; db?: Db; mail?: MailServ
   const providers = buildProviders(config)
   /* 核验引擎（阶段三）：跨单证一致性 + 合规规则预检，解析成功后自动运行 */
   const checkEngine = new CheckEngine(db)
+  /** 安全地跑一次核验：引擎异常不得影响解析/上传主流程 */
+  const runCheck = (shipmentId: string, trigger: 'check' | 'recheck' = 'check'): void => {
+    try {
+      checkEngine.run(shipmentId, trigger)
+    } catch (err) {
+      console.error(`[check-engine] 货物 ${shipmentId} 核验失败：`, err)
+    }
+  }
   const pipeline = new ParsePipeline(db, new FileStorage(config), providers.extraction, providers.ocr, (shipmentId) => {
-    checkEngine.run(shipmentId, 'check')
+    runCheck(shipmentId, 'check')
   })
   const parseQueue = new ParseQueue((documentId) => pipeline.run(documentId))
   // 启动恢复：上次服务中断时留在 parsing 的文档 → uploaded 重新入队
   const recovered = pipeline.recoverInterrupted()
-  const documents = new DocumentService(db, config, shipments, (documentId) => parseQueue.enqueue(documentId))
+  const documents = new DocumentService(
+    db,
+    config,
+    shipments,
+    (documentId) => parseQueue.enqueue(documentId),
+    // 单证被移除 → 现有核验结论已过时，立即重跑
+    (shipmentId) => runCheck(shipmentId, 'recheck'),
+  )
   for (const id of recovered) parseQueue.enqueue(id)
   for (const id of pipeline.pendingDocumentIds()) parseQueue.enqueue(id)
 

@@ -29,6 +29,7 @@ import type {
   RecordDecisionRequest,
   RecheckReport,
   RegisterRequest,
+  ResolveFindingRequest,
   UpdateFieldRequest,
   UploadDocumentsRequest,
   UploadResult,
@@ -218,6 +219,22 @@ export class RealApi implements LogiCheckApi {
 
   async recordHumanDecision(req: RecordDecisionRequest): Promise<Finding> {
     const data = await request<{ finding: Finding }>(`/findings/${encodeURIComponent(req.findingId)}/decisions`, {
+      method: 'POST',
+      body: JSON.stringify({ note: req.note }),
+    })
+    return data.finding
+  }
+
+  async resolveFinding(req: ResolveFindingRequest): Promise<Finding> {
+    const data = await request<{ finding: Finding }>(`/findings/${encodeURIComponent(req.findingId)}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify({ note: req.note }),
+    })
+    return data.finding
+  }
+
+  async reopenFinding(req: ResolveFindingRequest): Promise<Finding> {
+    const data = await request<{ finding: Finding }>(`/findings/${encodeURIComponent(req.findingId)}/reopen`, {
       method: 'POST',
       body: JSON.stringify({ note: req.note }),
     })

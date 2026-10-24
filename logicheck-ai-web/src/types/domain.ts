@@ -144,7 +144,7 @@ export interface HumanDecision {
   id: string
   text: string
   at: string
-  kind: 'review' | 'accept_risk' | 'resolve'
+  kind: 'review' | 'accept_risk' | 'resolve' | 'reopen'
 }
 
 /* ---------- 合规规则（PRD 7.1 Rule Contract） ---------- */

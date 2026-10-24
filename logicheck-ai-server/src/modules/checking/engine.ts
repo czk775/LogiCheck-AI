@@ -143,8 +143,10 @@ export class CheckEngine {
       }
 
       // 跨单证冲突 → 异常（按自然键定位；已解决的不自动重开）
+      const handledKeys = new Set<string>()
       for (const c of cross) {
         const checkKey = `cross:${c.fieldKey}`
+        handledKeys.add(checkKey)
         const existing = this.db.get<{ id: string; status: string }>(
           'SELECT id, status FROM findings WHERE shipment_id = ? AND check_key = ?',
           shipmentId,
@@ -169,8 +171,11 @@ export class CheckEngine {
             this.db.run('UPDATE findings SET summary = ?, evidence = ?, severity = ? WHERE id = ?', c.summary, evidence, crossGroupSeverity(c.fieldKey), existing.id)
           }
           // 已解决（人工处理过）的异常保持 resolved，不自动重开；冲突事实记录在本次 run 摘要中
-        } else if (c.status === 'consistent' && existing && existing.status === 'open') {
-          // 仅「仍开放」的冲突在重检一致后自动解决；reviewed/resolved 不动
+        } else if ((c.status === 'consistent' || c.status === 'missing') && existing && existing.status === 'open') {
+          // 冲突不再成立时自动解决：
+          // - consistent：多份单证取值一致，重检通过
+          // - missing：只剩一份单证提供该字段（如来源单证已被移除），无从构成跨单证冲突
+          // reviewed / resolved 不动（尊重人工判断）
           this.db.run(
             'UPDATE findings SET status = ?, summary = ? WHERE id = ?',
             'resolved',
@@ -178,6 +183,23 @@ export class CheckEngine {
             existing.id,
           )
         }
+        // indeterminate（取值无法标准化）：无法判断，不能自动解决，仍需人工处理
+      }
+
+      // 本轮完全没有该字段组的结论（相关单证已移除）→ 冲突不成立，自动解决
+      const stale = this.db.all<{ id: string; title: string; check_key: string }>(
+        `SELECT id, title, check_key FROM findings
+          WHERE shipment_id = ? AND check_key LIKE 'cross:%' AND status = 'open'`,
+        shipmentId,
+      )
+      for (const f of stale) {
+        if (handledKeys.has(f.check_key)) continue
+        this.db.run(
+          'UPDATE findings SET status = ?, summary = ? WHERE id = ?',
+          'resolved',
+          '重检通过：相关单证已移除，该字段不再具备跨单证比对条件，冲突不成立',
+          f.id,
+        )
       }
 
       this.db.run(
