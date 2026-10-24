@@ -229,7 +229,9 @@ export class ParsePipeline {
       message = `解析过程异常：${err.message}`
     }
     this.db.transaction(() => {
-      this.db.run('UPDATE documents SET status = ?, error = ?, updated_at = ? WHERE id = ?', 'failed', message, t, doc.id)
+      // 错误码前缀：前端据此做精确的错误映射（鉴权/限流/额度…），
+      // 没有码只能靠猜消息文本，映射会失准。
+      this.db.run('UPDATE documents SET status = ?, error = ?, updated_at = ? WHERE id = ?', 'failed', `[${code}] ${message}`, t, doc.id)
       this.db.run('UPDATE processing_runs SET status = ?, finished_at = ?, error = ? WHERE id = ?', 'failed', t, `[${code}] ${message}`, runId)
       this.db.run('INSERT INTO activities (id, shipment_id, text, at) VALUES (?, ?, ?, ?)', newId('act'), doc.shipment_id, `解析失败：${doc.file_name}（${code}：${message}）`, t)
     })

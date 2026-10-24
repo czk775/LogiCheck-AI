@@ -10,7 +10,7 @@
  * ============================================================ */
 
 import assert from 'node:assert/strict'
-import { toAiStatusView, toDocErrorView, isRetryWorthwhile } from '../src/services/domain/aiStatus.ts'
+import { toAiStatusView, toDocErrorView, isRetryWorthwhile, extractErrorCode } from '../src/services/domain/aiStatus.ts'
 
 let passed = 0
 function check(name: string, fn: () => void): void {
@@ -91,6 +91,28 @@ check('Mock 模式 → 绝不显示「AI 已连接」', () => {
   assert.ok(v.hint && v.hint.includes('预置数据'))
 })
 
+check('Mock 模式 → 详情含运行模式/提取方式/图片识别', () => {
+  const v = toAiStatusView(
+    { configured: false, extraction: 'deterministic', ocr: 'none' },
+    'mock',
+  )
+  const labels = v.details.map((d) => d.label)
+  assert.ok(labels.includes('运行模式'))
+  assert.ok(labels.includes('提取方式'))
+  assert.ok(labels.includes('图片识别'))
+})
+
+check('未接通 → 详情同样含运行模式/提取方式/图片识别', () => {
+  const v = toAiStatusView(
+    { configured: false, extraction: 'deterministic', ocr: 'none', reason: '未配置' },
+    'real',
+  )
+  const labels = v.details.map((d) => d.label)
+  assert.ok(labels.includes('运行模式'))
+  assert.ok(labels.includes('提取方式'))
+  assert.ok(labels.includes('图片识别'))
+})
+
 check('状态为 null → 提示未知而非谎报已连接', () => {
   const v = toAiStatusView(null, 'real')
   assert.equal(v.label, 'AI 状态未知')
@@ -129,10 +151,28 @@ check('OCR 未配置 → 指向 AI_VISION_MODEL', () => {
 })
 
 check('未知错误码 → 不编造原因，仅给通用建议', () => {
-  const v = toDocErrorView('weird_unknown_error: 某种没见过的错')!
+  const v = toDocErrorView('[weird_unknown_error] 某种没见过的错')!
   assert.equal(v.title, '解析失败')
   assert.equal(v.known, false)
-  assert.equal(v.raw, 'weird_unknown_error: 某种没见过的错', '原始错误必须保留')
+  assert.equal(v.raw, '[weird_unknown_error] 某种没见过的错', '原始错误必须保留')
+})
+
+check('后端方括号码格式 → 正确映射', () => {
+  const v = toDocErrorView('[ai_auth_failed] AI 服务鉴权失败：API Key 无效')!
+  assert.equal(v.title, 'API Key 无效')
+  assert.equal(v.known, true)
+})
+
+check('OCR 未配置（方括号码）→ 指向 AI_VISION_MODEL', () => {
+  const v = toDocErrorView('[ocr_not_configured] OCR / 视觉模型尚未接入')!
+  assert.equal(v.title, '图片识别未启用')
+  assert.ok(v.advice.includes('AI_VISION_MODEL'))
+})
+
+check('extractErrorCode：方括号码 / 历史冒号格式 / 无码', () => {
+  assert.equal(extractErrorCode('[ai_timeout] 响应超时'), 'ai_timeout')
+  assert.equal(extractErrorCode('ai_auth_failed: 鉴权失败'), 'ai_auth_failed')
+  assert.equal(extractErrorCode('某种中文错误，没有码'), null)
 })
 
 check('空错误 → 返回 null（不渲染错误块）', () => {

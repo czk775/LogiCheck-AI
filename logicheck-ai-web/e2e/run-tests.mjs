@@ -40,6 +40,30 @@ const BASE = `http://127.0.0.1:${WEB_PORT}`
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
+/** 从服务端 .env 读取某个变量（只读，不打印值） */
+function readEnvValue(key) {
+  try {
+    const p = path.join(SERVER_DIR, '.env')
+    if (!existsSync(p)) return ''
+    const raw = readFileSync(p, 'utf8')
+    for (const line of raw.split(/\r?\n/)) {
+      const t = line.trim()
+      if (!t || t.startsWith('#')) continue
+      const eq = t.indexOf('=')
+      if (eq < 0) continue
+      if (t.slice(0, eq).trim() !== key) continue
+      let v = t.slice(eq + 1).trim()
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+        v = v.slice(1, -1)
+      }
+      return v
+    }
+  } catch {
+    /* 读不到按未配置处理 */
+  }
+  return ''
+}
+
 /* ---------- CDP 客户端 ---------- */
 class CDP {
   constructor(ws) {
@@ -105,6 +129,9 @@ async function dumpFailureContext(failedName) {
         ruleRows: document.querySelectorAll('[data-testid="rule-row"]').length,
         docRows: document.querySelectorAll('[data-testid="doc-row"]').length,
         drawers: Array.from(document.querySelectorAll('[data-testid$="-drawer"]')).map(e => e.getAttribute('data-testid')),
+        docErrors: Array.from(document.querySelectorAll('[data-testid="doc-error"]')).map(e => (e.textContent || '').replace(/\s+/g, ' ').slice(0, 120)),
+        docTexts: Array.from(document.querySelectorAll('[data-testid="doc-row"]')).map(e => (e.textContent || '').replace(/\s+/g, ' ').slice(0, 80)),
+        aiStatusPanel: (document.querySelector('[data-testid="ai-status-panel"]')?.textContent || '').replace(/\s+/g, ' ').slice(0, 200),
         bodyText: (document.body.innerText || '').replace(/\\s+/g, ' ').slice(0, 300),
       }
       try {
@@ -215,19 +242,42 @@ async function setupStack() {
   const logs = []
   const serverLogPath = path.join(dir, 'server.log')
 
+  // AI 模式：E2E_AI=1 时加载服务端 .env（真实 Key / 模型），走真实大模型链路。
+  // 默认关闭 —— 回归测试不应每次都消耗额度。
+  const useRealAi = process.env.E2E_AI === '1'
+  const serverEnv = {
+    ...process.env,
+    PORT: String(API_PORT),
+    DATABASE_PATH: path.join(dir, 'logicheck.db'),
+    UPLOAD_DIR: path.join(dir, 'uploads'),
+    MAIL_OUTBOX_DIR: path.join(dir, 'mail-outbox'),
+  }
+  if (useRealAi) {
+    serverEnv.EXTRACTION_PROVIDER = 'ai'
+    serverEnv.DASHSCOPE_API_KEY = readEnvValue('DASHSCOPE_API_KEY')
+    serverEnv.AI_MODEL = readEnvValue('AI_MODEL') || 'qwen3.8-flash'
+    serverEnv.AI_VISION_MODEL = readEnvValue('AI_VISION_MODEL') || 'qwen3.8-omni-flash'
+    serverEnv.AI_BASE_URL = readEnvValue('AI_BASE_URL') || 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+    if (!serverEnv.DASHSCOPE_API_KEY) {
+      console.error('✗ E2E_AI=1 但服务端 .env 中没有 DASHSCOPE_API_KEY')
+      process.exit(2)
+    }
+    console.log('⚡ AI 模式：使用真实大模型（会消耗少量额度）')
+  }
+
   const server = spawn(
     'node',
-    ['--experimental-sqlite', '--disable-warning=ExperimentalWarning', '--import', 'tsx/esm', 'src/index.ts'],
+    [
+      '--experimental-sqlite',
+      '--disable-warning=ExperimentalWarning',
+      '--import',
+      'tsx/esm',
+      'src/index.ts',
+    ],
     {
       cwd: SERVER_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
-        PORT: String(API_PORT),
-        DATABASE_PATH: path.join(dir, 'logicheck.db'),
-        UPLOAD_DIR: path.join(dir, 'uploads'),
-        MAIL_OUTBOX_DIR: path.join(dir, 'mail-outbox'),
-      },
+      env: serverEnv,
     },
   )
   children.push(server)
@@ -412,6 +462,42 @@ async function main() {
     check('D8 合规免责声明存在', await cdp.eval(`document.body.textContent.includes('不构成法律意见或海关放行结论')`))
     check('D9 货物字段卡 6 项 + 冲突标记', await cdp.eval(`document.querySelectorAll('.profile-item').length === 6 && document.body.textContent.includes('需复核')`))
 
+    /* ===== D10. AI 状态条（第五阶段）===== */
+    await waitFor(cdp, `document.querySelector('[data-testid="ai-status-trigger"]')`, 8000, 'ai status bar')
+    check('D10 工作台顶部有 AI 状态条', await cdp.eval(`!!document.querySelector('[data-testid="ai-status-trigger"]')`))
+    check(
+      'D10b 状态条文案为 AI 已连接/不可用/演示模式之一（不泄漏技术细节）',
+      await cdp.eval(`(() => {
+        const t = document.querySelector('[data-testid="ai-status-trigger"]')?.textContent ?? ''
+        return /AI 已连接|AI 不可用|AI 状态未知|演示模式/.test(t)
+      })()`),
+    )
+    check('D10c 状态条不含密钥与限流配额字样', await cdp.eval(`(() => {
+        const t = document.querySelector('[data-testid="ai-status-trigger"]')?.textContent ?? ''
+        return !/sk-/i.test(t) && !/额度|余额|token/i.test(t)
+      })()`))
+    // 点击展开详情
+    await cdp.eval(`document.querySelector('[data-testid="ai-status-trigger"]').click()`)
+    await waitFor(cdp, `document.querySelector('[data-testid="ai-status-panel"]')`, 5000, 'ai status panel')
+    check('D10d 点击展开详情浮层', await cdp.eval(`!!document.querySelector('[data-testid="ai-status-panel"]')`))
+    check('D10e 详情含运行模式与提取/识别信息', await cdp.eval(`(() => {
+        const t = document.querySelector('[data-testid="ai-status-panel"]')?.textContent ?? ''
+        return t.includes('运行模式') && (t.includes('提取模型') || t.includes('提取方式')) && t.includes('图片识别')
+      })()`))
+    check('D10f 详情不含密钥字样', await cdp.eval(`(() => {
+        const t = document.querySelector('[data-testid="ai-status-panel"]')?.textContent ?? ''
+        return !/sk-[a-z0-9]/i.test(t) && !/API Key\s*[:：]\s*\S/i.test(t)
+      })()`))
+    // 关闭浮层
+    await cdp.eval(`document.querySelector('[data-testid="ai-status-trigger"]').click()`)
+    await waitFor(
+      cdp,
+      `!document.querySelector('[data-testid="ai-status-panel"]')`,
+      5000,
+      'ai status panel closed',
+    )
+    check('D10g 再次点击可收起浮层', await cdp.eval(`!document.querySelector('[data-testid="ai-status-panel"]')`))
+
     /* ===== E. 异常抽屉：证据链 ===== */
     await cdp.eval(`document.querySelectorAll('[data-testid="issue-item"]')[0].click()`)
     await waitFor(cdp, `document.querySelector('[data-testid="issue-drawer"]')`, 5000, 'issue drawer')
@@ -523,6 +609,21 @@ async function main() {
         return png.includes('处理失败') && edi.includes('已解析')
       })()`))
       check('I5r2 工作台货物信息展示真实提取字段（数量 1000，来自 EDI 报文）', await cdp.eval(`document.querySelector('#profile')?.textContent.includes('1000')`))
+      // 第五阶段：单证卡片上直接展示失败原因（第五阶段新增）
+      check(
+        'I5r3 单证卡片展示解析失败原因与处理建议',
+        await cdp.eval(`(() => {
+          const row = document.querySelector('[data-file-name="test-invoice.png"]')
+          const err = row?.querySelector('[data-testid="doc-error"]')
+          if (!err) return false
+          const t = err.textContent ?? ''
+          return t.includes('图片识别未启用') && t.includes('AI_VISION_MODEL')
+        })()`),
+      )
+      check(
+        'I5r4 失败单证提供「重新解析」按钮',
+        await cdp.eval(`!!document.querySelector('[data-file-name="test-invoice.png"] [data-testid="retry-doc"]')`),
+      )
     }
     check('I6 上传反馈 toast', await cdp.eval(`Array.from(document.querySelectorAll('[data-testid="toast"]')).some(t => t.textContent.includes('2 份文件正在接收'))`))
     // 预览图片

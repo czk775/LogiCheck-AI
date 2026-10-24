@@ -46,6 +46,7 @@ export function toAiStatusView(status: AiStatus | null, mode: 'real' | 'mock'): 
       details: [
         { label: '运行模式', value: '前端演示（无真实大模型）' },
         { label: '提取方式', value: '预置演示数据' },
+        { label: '图片识别', value: '未启用' },
       ],
       hint: '演示结果来自预置数据，不经过真实大模型解析',
     }
@@ -148,15 +149,30 @@ export interface DocErrorView {
 }
 
 /**
+ * 从错误字符串中取出错误码。
+ *
+ * 后端落库格式为 `[错误码] 消息`（第五阶段起），
+ * 但兼容历史的纯消息格式（无码时返回 null）。
+ */
+export function extractErrorCode(raw: string): string | null {
+  const m = raw.match(/^\[([a-z0-9_]+)\]/)
+  if (m?.[1]) return m[1]
+  // 历史格式：冒号前的词若是已知错误码形态则采用
+  const head = raw.split(':')[0].trim()
+  if (/^[a-z][a-z0-9_]*$/.test(head) && head.includes('_')) return head
+  return null
+}
+
+/**
  * 把后端解析错误翻译为用户可读文案。
- * 后端错误形如 "ai_auth_failed: 鉴权失败：API Key 无效"，
- * 取冒号前的错误码做映射。
+ * 后端错误形如 "[ai_auth_failed] AI 服务鉴权失败：…"，
+ * 取方括号内的错误码做映射。
  */
 export function toDocErrorView(rawError: string | null | undefined): DocErrorView | null {
   if (!rawError || !rawError.trim()) return null
   const raw = rawError.trim()
-  const code = raw.split(':')[0].trim()
-  const meta = DOC_ERROR_META[code]
+  const code = extractErrorCode(raw)
+  const meta = code ? DOC_ERROR_META[code] : undefined
   if (!meta) {
     return { title: '解析失败', advice: '可点击重新解析重试', raw, known: false }
   }
@@ -164,7 +180,8 @@ export function toDocErrorView(rawError: string | null | undefined): DocErrorVie
 }
 
 /** 从错误码判断是否值得提示「重新解析」（配额/鉴权类问题重试无意义） */
-export function isRetryWorthwhile(code: string): boolean {
+export function isRetryWorthwhile(code: string | null): boolean {
+  if (!code) return true
   return ![
     'ai_auth_failed',
     'ai_quota_exceeded',

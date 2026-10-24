@@ -3,7 +3,7 @@ import { Icon } from '../../components/Icon'
 import { Chip } from '../../components/Chip'
 import { useStore } from '../../store/AppStore'
 import { docStatusMeta } from '../../services/domain/shipmentStatus'
-import { toDocErrorView, isRetryWorthwhile } from '../../services/domain/aiStatus'
+import { toDocErrorView, isRetryWorthwhile, extractErrorCode } from '../../services/domain/aiStatus'
 import { UploadZone } from './UploadZone'
 import { useFileChooser } from '../layout/AppShell'
 import { formatFileSize } from '../../utils/format'
@@ -73,7 +73,7 @@ function DocumentRow({
   const meta = docStatusMeta(d)
   const [retrying, setRetrying] = useState(false)
   const errorView = toDocErrorView(d.error)
-  const errorCode = d.error ? d.error.split(':')[0].trim() : ''
+  const errorCode = extractErrorCode(d.error ?? '')
   const canRetry = errorView ? isRetryWorthwhile(errorCode) : true
 
   const handleRetry = () => {
