@@ -6,14 +6,25 @@ import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { AuthService } from '../auth/service.ts'
 import { sessionTokenOf } from '../../core/guard.ts'
 import { errors } from '../../core/errors.ts'
+import type { RateLimiter } from '../../core/rateLimit.ts'
 import type { DocumentService, IncomingFile } from './service.ts'
 
-export function registerDocumentRoutes(app: FastifyInstance, auth: AuthService, svc: DocumentService): void {
+export function registerDocumentRoutes(
+  app: FastifyInstance,
+  auth: AuthService,
+  svc: DocumentService,
+  limiter?: RateLimiter,
+): void {
   const userIdOf = (req: FastifyRequest): string => auth.requireUserId(sessionTokenOf(req))
 
   /* 上传（multipart：files[] + 可选 replaceDocumentId） */
   app.post('/api/shipments/:id/documents', async (req, reply) => {
     const userId = userIdOf(req)
+    /* 公网防滥用：上传限流在读 body 之前拦截（账号 + IP 双维度） */
+    if (limiter) {
+      if (!limiter.check('upload', userId)) throw errors.tooManyRequests('上传过于频繁，请 1 分钟后再试')
+      if (!limiter.check('uploadIp', req.ip)) throw errors.tooManyRequests('上传过于频繁，请 1 分钟后再试')
+    }
     const { id } = req.params as { id: string }
 
     const files: IncomingFile[] = []
@@ -62,6 +73,9 @@ export function registerDocumentRoutes(app: FastifyInstance, auth: AuthService, 
   /* 重试（保留文件，回到待真实解析） */
   app.post('/api/documents/:id/retry', async (req) => {
     const userId = userIdOf(req)
+    if (limiter && !limiter.check('upload', userId)) {
+      throw errors.tooManyRequests('操作过于频繁，请 1 分钟后再试')
+    }
     const { id } = req.params as { id: string }
     const doc = await svc.retryDocument(userId, id)
     if (!doc) throw errors.notFound('单证不存在或已被删除')

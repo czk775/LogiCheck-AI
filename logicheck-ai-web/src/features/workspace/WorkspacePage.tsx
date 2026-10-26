@@ -15,8 +15,6 @@ import { ProfileSection } from './ProfileSection'
 import { RulesSection } from './RulesSection'
 import { WorkflowSection } from './WorkflowSection'
 import { formatTime } from '../../utils/format'
-import { demoNotice } from '../../constants'
-import { apiMode } from '../../services/api'
 
 /** 货物工作台 —— 与已确认原型一致：状态 → 异常 → 行动优先 */
 export function WorkspacePage() {
@@ -94,13 +92,6 @@ export function WorkspacePage() {
           <RulesSection />
           <WorkflowSection />
         </div>
-      </div>
-
-      <div className="foot-disclaimer">
-        {demoNotice(state.aiStatus)}。
-        {apiMode === 'real'
-          ? '上传的真实文件保存在本机服务器磁盘，仅你本人可以访问；本机部署不等于生产级数据安全方案。'
-          : '上传的真实文件不会被发送到云端；浏览器本地文件缓存不属于生产级数据安全方案。'}
       </div>
     </section>
   )

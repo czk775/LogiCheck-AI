@@ -7,7 +7,6 @@ import { EmptyState } from '../../components/EmptyState'
 import { useStore } from '../../store/AppStore'
 import { SHIPMENT_STATUS_META, countIssues, statusShip } from '../../services/domain/shipmentStatus'
 import { formatTime } from '../../utils/format'
-import { demoNotice } from '../../constants'
 import type { Shipment } from '../../types/domain'
 
 /** 货物管理列表页 —— 与已确认原型一致 */
@@ -81,7 +80,6 @@ export function ShipmentListPage() {
             {state.shipments.length} 票
           </span>
         </h2>
-        <span className="section-hint">数据仅保存在当前浏览器的演示存储中</span>
       </div>
 
       <div className="toolbar">
@@ -162,8 +160,6 @@ export function ShipmentListPage() {
           </tbody>
         </table>
       </div>
-
-      <div className="footer-note">{demoNotice(state.aiStatus)}</div>
     </section>
   )
 }

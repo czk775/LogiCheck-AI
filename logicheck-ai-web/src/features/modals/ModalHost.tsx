@@ -1,5 +1,4 @@
 import { useStore } from '../../store/AppStore'
-import { AboutModal, GuideModal } from './GuideModal'
 import { ForgotPasswordModal } from './ForgotPasswordModal'
 import { RecheckInfoModal, RuleHelpModal } from './RuleHelpModal'
 import { DeleteDocumentModal, DeleteShipmentModal } from './DeleteModals'
@@ -14,10 +13,6 @@ export function ModalHost() {
   if (!modal) return null
 
   switch (modal.type) {
-    case 'guide':
-      return <GuideModal />
-    case 'about':
-      return <AboutModal />
     case 'rule-help':
       return <RuleHelpModal />
     case 'recheck-info':

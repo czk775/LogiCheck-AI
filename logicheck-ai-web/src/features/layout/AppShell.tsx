@@ -24,20 +24,12 @@ export function useFileChooser(): FileChooserValue {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { state, activeShipment, logout, openModal, uploadFiles, openShipment } = useStore()
+  const { state, activeShipment, logout, uploadFiles, openShipment } = useStore()
   const navigate = useNavigate()
   const location = useLocation()
   const { push } = useToast()
   const inputRef = useRef<HTMLInputElement>(null)
   const pendingMode = useRef<FileMode>({ kind: 'add' })
-
-  /* 侧栏能力说明必须与真实运行状态一致，不能硬写「尚未接入」 */
-  const aiConnected = state.aiStatus?.configured === true
-  const capabilityText = !REAL
-    ? '所有 AI 提取结果为明确标注的演示数据。上传真实文件仅做本地预览，不连接后端。'
-    : aiConnected
-      ? '身份、货物与单证保存在本机服务器；AI 解析已接通，提取字段可溯源到原文。'
-      : '身份、货物与单证保存在本机服务器；AI 解析尚未接通，当前使用确定性提取。'
 
   const openChooser = useCallback((mode: FileMode) => {
     pendingMode.current = mode
@@ -79,7 +71,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   const inWorkspace = location.pathname.startsWith('/shipments/')
-  const crumb = inWorkspace ? '货物工作台' : '货物管理'
+  const inAiOverview = location.pathname.startsWith('/ai-overview')
+  const crumb = inWorkspace ? '货物工作台' : inAiOverview ? 'AI 运行概览' : '货物管理'
 
   return (
     <FileChooserContext.Provider value={{ open: openChooser }}>
@@ -113,20 +106,15 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Icon name="package" />
             <span>货物工作台</span>
           </button>
-          <button type="button" className="nav-link" onClick={() => openModal({ type: 'guide' })}>
-            <Icon name="clipboard" />
-            <span>体验指南</span>
+          <button
+            type="button"
+            className={`nav-link ${inAiOverview ? 'active' : ''}`}
+            onClick={() => navigate('/ai-overview')}
+          >
+            <Icon name="activity" />
+            <span>AI 运行概览</span>
           </button>
           <div className="sidebar-bottom">
-            <div className="sys-card">
-              <strong>
-                <span className="pulse-dot" />
-                {REAL ? '本地服务 · SQLite 数据库' : '演示环境 · MOCK 服务'}
-              </strong>
-              <p>
-                {capabilityText}
-              </p>
-            </div>
             <button type="button" className="account" onClick={onLogout} title={REAL ? '退出登录' : '退出当前演示账号'}>
               <div className="avatar">{(state.account?.email ?? 'D')[0].toUpperCase()}</div>
               <div className="account-meta">
@@ -147,17 +135,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span>{crumb}</span>
             </div>
             <div className="top-right">
-              <span className="env-badge">{REAL ? '● REAL API · 本地服务器' : '● DEMO BUILD · MOCK 服务'}</span>
               <ThemeToggle />
-              <button
-                type="button"
-                className="top-action"
-                onClick={() => openModal({ type: 'guide' })}
-                title="体验指南"
-                aria-label="体验指南"
-              >
-                <Icon name="help" />
-              </button>
             </div>
           </header>
           {children}

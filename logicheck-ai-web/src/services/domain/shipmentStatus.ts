@@ -30,7 +30,15 @@ export function statusShip(s: Shipment): ShipmentStatusCode {
     // 真实模式：解析失败 → 检查失败；全部解析完成但尚无合规预检结果 → 证据不足
     // Mock 模式：没有真实解析与引擎 → 待接入 AI（保持原有诚实边界）
     if (s.documents.some((d) => d.status === 'failed')) return 'failed'
-    return apiMode === 'real' ? 'insufficient' : 'awaiting'
+    if (apiMode !== 'real') return 'awaiting'
+    // 核验引擎已运行过 → 与演示分支同语义按未解决异常推导；
+    // 从未跑过核验（如单证尚未解析完）→ 证据不足
+    const pending = s.findings.filter((f) => f.status !== 'resolved').length
+    if (pending) return 'needs_review'
+    const verified = s.runs.some(
+      (r) => (r.trigger === 'check' || r.trigger === 'recheck') && r.status !== 'failed' && r.status !== 'running',
+    )
+    return verified ? 'checked' : 'insufficient'
   }
   const pending = s.findings.filter((f) => f.status !== 'resolved').length
   if (pending) return 'needs_review'

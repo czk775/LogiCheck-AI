@@ -204,7 +204,7 @@ export type RunStatus = 'queued' | 'running' | 'succeeded' | 'partially_succeede
 export interface ProcessingRun {
   id: string
   shipmentId: string
-  trigger: 'upload' | 'recheck' | 'field_update' | 'manual'
+  trigger: 'upload' | 'parse' | 'check' | 'recheck' | 'field_update' | 'manual'
   status: RunStatus
   startedAt: string
   finishedAt?: string

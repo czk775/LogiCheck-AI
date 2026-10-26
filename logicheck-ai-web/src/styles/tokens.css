@@ -34,6 +34,24 @@
   /*  motion / shape  */
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --radius: 15px;
+
+  /*  登录页场景层（深色）  */
+  --scene-globe-hi: #1d4f6b;
+  --scene-globe-lo: #08192a;
+  --scene-halo: #2f8fb8;
+  --scene-grid: rgba(126, 205, 238, 0.3);
+  --scene-land: rgba(116, 198, 232, 0.24);
+  --scene-route-a: #59d9df;
+  --scene-route-b: #6b97ff;
+  --scene-node: #8ce8e7;
+  --scene-orbit: rgba(126, 196, 232, 0.3);
+  --scene-harbor: #0a2135;
+  --scene-water: rgba(96, 176, 214, 0.3);
+  --scene-particle: rgba(146, 216, 240, 0.55);
+  --scene-node-bg: rgba(14, 34, 53, 0.74);
+  --scene-glow: rgba(74, 186, 226, 0.34);
+  --scene-glow-soft: rgba(74, 186, 226, 0.1);
+  --scene-scrim: rgba(7, 12, 21, 0.5);
 }
 
 html[data-theme='light'] {
@@ -57,6 +75,24 @@ html[data-theme='light'] {
   --red: #b64c58;
   --amber: #946016;
   --green: #167456;
+
+  /*  登录页场景层（浅色 —— 浅蓝科技风）  */
+  --scene-globe-hi: #ffffff;
+  --scene-globe-lo: #cfe6f7;
+  --scene-halo: #7fb4e8;
+  --scene-grid: rgba(41, 118, 186, 0.26);
+  --scene-land: rgba(64, 140, 205, 0.24);
+  --scene-route-a: #1f7fd4;
+  --scene-route-b: #2f6fe0;
+  --scene-node: #1479c8;
+  --scene-orbit: rgba(35, 112, 184, 0.28);
+  --scene-harbor: #b9d4ea;
+  --scene-water: rgba(43, 116, 182, 0.28);
+  --scene-particle: rgba(43, 128, 199, 0.4);
+  --scene-node-bg: rgba(255, 255, 255, 0.86);
+  --scene-glow: rgba(150, 196, 240, 0.5);
+  --scene-glow-soft: rgba(168, 206, 244, 0.22);
+  --scene-scrim: rgba(255, 255, 255, 0.55);
 }
 
 /* 暴露给 Tailwind 工具类：bg-panel / text-mute / border-line / font-display ... */

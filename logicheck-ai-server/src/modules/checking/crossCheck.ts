@@ -123,9 +123,12 @@ export function crossGroupSeverity(fieldKey: string): 'danger' | 'warn' {
   return CROSS_FIELD_GROUPS.find((g) => g.fieldKey === fieldKey)?.severity ?? 'warn'
 }
 
-/** 观测值的人类可读形式（原始值 + 单位） */
+/** 观测值的人类可读形式（原始值 + 单位；原始值已含该单位时不重复拼接，如 "1000 PCS" + unit "PCS"） */
 function display(obs: FieldObservation): string {
-  return obs.unit ? `${obs.raw} ${obs.unit}` : obs.raw
+  if (!obs.unit) return obs.raw
+  const raw = obs.raw.trim()
+  const unit = obs.unit.trim()
+  return raw.toUpperCase().endsWith(unit.toUpperCase()) ? raw : `${raw} ${unit}`
 }
 
 function listValues(observations: FieldObservation[]): string {

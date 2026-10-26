@@ -21,8 +21,6 @@ const REAL = apiMode === 'real'
    ============================================================ */
 
 export type UiModal =
-  | { type: 'guide' }
-  | { type: 'about' }
   | { type: 'rule-help' }
   | { type: 'recheck-info' }
   | { type: 'forgot-password' }

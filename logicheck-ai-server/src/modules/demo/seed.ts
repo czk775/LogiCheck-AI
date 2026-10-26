@@ -6,6 +6,7 @@
 
 import type { Db } from '../../db/index.ts'
 import { newId, nowIso } from '../../core/ids.ts'
+import { hashPassword } from '../../core/password.ts'
 import type { CheckResultLite, ComplianceRule, RuleKey } from '../../types.ts'
 
 export const DEMO_SHIPMENT_ID = 'SHP-2026-001'
@@ -379,4 +380,33 @@ export function seedRules(db: Db): void {
       rule.recommend,
     )
   })
+}
+
+/* ============================================================
+   演示账号种子（公网部署用）：确保 demo@logicheck.ai 存在且可用
+   配置的密码登录（评委无需注册即可体验；本地开发同样生效）。
+   - 幂等：每次启动执行，账号存在则重置密码为配置值
+   - 密码来自环境变量 DEMO_PASSWORD（默认 demo1234），非密钥
+   - 登录表单可用；POST /api/auth/demo 的随机密码路径保持不变
+   ============================================================ */
+
+export const DEMO_ACCOUNT_EMAIL = 'demo@logicheck.ai'
+
+export function seedDemoAccount(db: Db, password: string): void {
+  const existing = db.get<{ id: string }>('SELECT id FROM users WHERE email = ?', DEMO_ACCOUNT_EMAIL)
+  const t = nowIso()
+  if (existing) {
+    // 已存在：重置为配置密码，保证评委随时能用（演示账号，非真实资产）
+    db.run('UPDATE users SET password_hash = ?, updated_at = ? WHERE email = ?', hashPassword(password), t, DEMO_ACCOUNT_EMAIL)
+    return
+  }
+  db.run(
+    'INSERT INTO users (id, email, password_hash, display_name, is_demo, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)',
+    newId('usr'),
+    DEMO_ACCOUNT_EMAIL,
+    hashPassword(password),
+    '演示账号',
+    t,
+    t,
+  )
 }

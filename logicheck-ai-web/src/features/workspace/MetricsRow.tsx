@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react'
 import { Icon } from '../../components/Icon'
 import { useStore } from '../../store/AppStore'
+import { api } from '../../services/api'
 import { countIssues } from '../../services/domain/shipmentStatus'
 import { scrollToSection } from '../../utils/format'
 
@@ -9,6 +11,22 @@ export function MetricsRow() {
   const s = activeShipment!
   const issueCount = countIssues(s)
   const profileCount = Object.values(s.profile).filter(Boolean).length
+  // 真实货物：字段数取各单证实际提取到的并集（缺失不计入）
+  const fieldCount = s.isDemo
+    ? profileCount
+    : new Set(s.documents.flatMap((d) => Object.keys(d.fields))).size
+  // 合规规则数：真实货物读核验引擎真实产出的预检结果
+  const [ruleCount, setRuleCount] = useState<number | null>(null)
+  useEffect(() => {
+    let alive = true
+    if (s.isDemo) return
+    void api.getCheckResults(s.id).then((r) => {
+      if (alive) setRuleCount(r.length)
+    })
+    return () => {
+      alive = false
+    }
+  }, [s.id, s.isDemo, s.documents.length, s.findings.length])
 
   return (
     <div className="metrics">
@@ -32,15 +50,15 @@ export function MetricsRow() {
         <div className="m-top">
           货物字段 <Icon name="package" />
         </div>
-        <strong>{String(profileCount).padStart(2, '0')}</strong>
-        <small>{s.isDemo ? 'AI 字段结果（演示）' : '尚未提取'}</small>
+        <strong>{String(fieldCount).padStart(2, '0')}</strong>
+        <small>{s.isDemo ? 'AI 字段结果（演示）' : fieldCount ? 'AI 已从单证提取' : '尚未提取'}</small>
       </button>
       <button type="button" className="metric" onClick={() => scrollToSection('rules')}>
         <div className="m-top">
           合规规则 <Icon name="shield" />
         </div>
-        <strong>{s.isDemo ? '05' : '—'}</strong>
-        <small>{s.isDemo ? '有限规则演示集' : '等待规则执行'}</small>
+        <strong>{s.isDemo ? '05' : ruleCount ? String(ruleCount).padStart(2, '0') : '—'}</strong>
+        <small>{s.isDemo ? '有限规则演示集' : ruleCount ? '确定性引擎已预检' : '等待规则执行'}</small>
       </button>
     </div>
   )

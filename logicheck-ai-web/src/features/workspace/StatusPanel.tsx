@@ -16,7 +16,15 @@ export function StatusPanel() {
   const statusText = !hasDocs
     ? '上传第一份单证，开始预检'
     : userOnly
-      ? '文件已接收，待接入真实 AI'
+      ? status === 'processing'
+        ? '单证解析进行中'
+        : status === 'failed'
+          ? '有单证处理失败'
+          : issueCount > 0
+            ? '发现需要关注的异常'
+            : status === 'checked'
+              ? '核验已完成，无待处理异常'
+              : '单证已解析，等待核验'
       : issueCount > 0
         ? '发现需要关注的异常'
         : s.dirty
@@ -26,7 +34,15 @@ export function StatusPanel() {
   const desc = !hasDocs
     ? '从第一份单证开始，逐步建立完整货物资料。'
     : userOnly
-      ? '本演示不伪造上传文件的 AI 解析结果。文件已在浏览器端保存，未来将由真实 AI API 进行理解和核验。'
+      ? status === 'processing'
+        ? '文件已接收并进入解析队列，完成后会自动执行跨单证核验与合规预检。'
+        : status === 'failed'
+          ? '失败原因已标注在单证卡片上，修正或重新上传后可再次解析。'
+          : issueCount
+            ? `当前有 ${issueCount} 项待处理问题。点击异常，可回溯来源单证并进行人工复核。`
+            : status === 'checked'
+              ? '已完成跨单证核验与合规预检。材料存在不代表具备法定合规结论。'
+              : '解析已全部完成，核验尚未执行；可手动请求重新检查。'
       : issueCount
         ? `当前有 ${issueCount} 项待处理问题。点击异常，可回溯来源单证并进行人工复核。`
         : '已完成当前演示核验。材料存在不代表具备法定合规结论。'

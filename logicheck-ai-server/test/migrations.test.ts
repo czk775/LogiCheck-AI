@@ -28,10 +28,10 @@ test('M1 新环境：从零应用全部迁移', () => {
   const db = openDatabase(path)
   try {
     const ran = migrate(db)
-    assert.deepEqual(ran, ['001_initial', '002_parsing', '003_checking', '004_ai'])
+    assert.deepEqual(ran, ['001_initial', '002_parsing', '003_checking', '004_ai', '005_ai_usage_daily'])
     assert.deepEqual(
       appliedMigrations(db).map((m) => m.version),
-      ['001_initial', '002_parsing', '003_checking', '004_ai'],
+      ['001_initial', '002_parsing', '003_checking', '004_ai', '005_ai_usage_daily'],
     )
     // 重复执行：无新迁移
     assert.deepEqual(migrate(db), [])
@@ -73,7 +73,7 @@ test('M2 旧库升级：001 的既有数据保留，002 新列就位', () => {
 
     // 升级：只应应用 002、003、004
     const ran = migrate(db)
-    assert.deepEqual(ran, ['002_parsing', '003_checking', '004_ai'], '已应用过 001 的库只应跑后续迁移')
+    assert.deepEqual(ran, ['002_parsing', '003_checking', '004_ai', '005_ai_usage_daily'], '已应用过 001 的库只应跑后续迁移')
 
     // 旧数据完整保留
     const legacy = db.get<{ value: string; source: string; status: string }>(

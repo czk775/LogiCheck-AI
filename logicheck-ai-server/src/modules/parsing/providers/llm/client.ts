@@ -54,16 +54,48 @@ const RETRYABLE: Record<LlmErrorCode, boolean> = {
 }
 
 /**
- * 进程内用量累计器（额度护栏的第二道防线）。
+ * 单次 AI 调用记录（可观测性）。
+ *
+ * 边界：只记录「什么时候、哪个模型、什么任务、多久、成没成、多少 token」，
+ * 不记录提示词与响应内容，不涉及任何密钥。
+ */
+export interface AiCallRecord {
+  /** 调用完成时间（ISO 8601） */
+  at: string
+  /** 实际使用的模型名 */
+  model: string
+  /** 任务类型：extraction（字段提取）/ ocr（视觉识别）/ eval（评估） */
+  task: string
+  /** 耗时（毫秒，含内部重试） */
+  durationMs: number
+  /** 调用结果 */
+  status: 'ok' | 'error'
+  /** 失败时的稳定错误码（成功时无） */
+  errorCode?: string
+  promptTokens: number
+  completionTokens: number
+}
+
+/** 进程内用量累计器（额度护栏的第二道防线）。
  *
  * 第一道是单次 `max_tokens` 封顶（防单次失控）；
  * 这一道管总量：连续跑批 / 误循环时，累计用量触顶后直接拒绝继续调用，
  * 而不是等服务商返回 429 或账单超支才发现。
+ *
+ * 同时承担轻量可观测性：按调用顺序保留最近若干条记录（环形缓冲），
+ * 供「AI 运行概览」页展示真实调用情况——不引入外部监控框架。
  */
 export class UsageMeter {
   private promptTokens = 0
   private completionTokens = 0
   private calls = 0
+  private successCalls = 0
+  private failedCalls = 0
+  private totalDurationMs = 0
+  private recent: AiCallRecord[] = []
+
+  /** 最多保留多少条最近调用记录 */
+  private static readonly RECENT_CAP = 30
 
   constructor(private readonly limitTokens: number) {}
 
@@ -75,18 +107,48 @@ export class UsageMeter {
     return this.totalTokens() < this.limitTokens
   }
 
+  /** 记录一次完整调用（用量 + 可观测性字段） */
+  recordCall(rec: Omit<AiCallRecord, 'at'> & { at?: string }): void {
+    this.calls += 1
+    this.totalDurationMs += rec.durationMs
+    if (rec.status === 'ok') {
+      this.successCalls += 1
+      this.promptTokens += rec.promptTokens
+      this.completionTokens += rec.completionTokens
+    } else {
+      this.failedCalls += 1
+    }
+    this.recent.push({ ...rec, at: rec.at ?? new Date().toISOString() })
+    if (this.recent.length > UsageMeter.RECENT_CAP) this.recent.shift()
+  }
+
   totalTokens(): number {
     return this.promptTokens + this.completionTokens
   }
 
-  snapshot(): { calls: number; promptTokens: number; completionTokens: number; totalTokens: number; limitTokens: number; exhausted: boolean } {
+  snapshot(): {
+    calls: number
+    successCalls: number
+    failedCalls: number
+    promptTokens: number
+    completionTokens: number
+    totalTokens: number
+    limitTokens: number
+    exhausted: boolean
+    avgDurationMs: number
+    recent: AiCallRecord[]
+  } {
     return {
       calls: this.calls,
+      successCalls: this.successCalls,
+      failedCalls: this.failedCalls,
       promptTokens: this.promptTokens,
       completionTokens: this.completionTokens,
       totalTokens: this.totalTokens(),
       limitTokens: this.limitTokens,
       exhausted: this.totalTokens() >= this.limitTokens,
+      avgDurationMs: this.calls > 0 ? Math.round(this.totalDurationMs / this.calls) : 0,
+      recent: [...this.recent].reverse(),
     }
   }
 }
@@ -128,6 +190,8 @@ export interface LlmConfig {
    * 超过后本进程不再发起调用，避免跑批 / 误循环把额度烧穿。
    */
   usageLimitTokens?: number
+  /** 任务类型标签（可观测性）：extraction / ocr / eval */
+  task?: string
 }
 
 /** 输出上限默认值：提取任务真实需要仅数百 token，此值留足余量 */
@@ -215,7 +279,7 @@ export class LlmClient {
   }
 
   /** 发起一次 chat/completions 调用（内部含重试） */
-  async chat(messages: LlmMessage[]): Promise<LlmResponse> {
+  async chat(messages: LlmMessage[], task: string = this.config.task ?? 'unknown'): Promise<LlmResponse> {
     // 累计用量已触顶 → 直接拒绝，不再发起调用（额度护栏）
     if (this.usage.snapshot().exhausted) {
       throw new LlmError(
@@ -235,12 +299,20 @@ export class LlmClient {
       temperature: 0,
     }
 
+    const startedAt = Date.now()
     let lastError: LlmError | null = null
     for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
       try {
         const res = await this.attempt(endpoint, body)
-        // 记录本次用量（供额度护栏与用量统计使用）
-        this.usage.record(res.usage)
+        // 记录本次调用（用量 + 可观测性：耗时 / 模型 / 任务 / token）
+        this.usage.recordCall({
+          model: res.model,
+          task,
+          durationMs: Date.now() - startedAt,
+          status: 'ok',
+          promptTokens: res.usage?.promptTokens ?? 0,
+          completionTokens: res.usage?.completionTokens ?? 0,
+        })
         return res
       } catch (err) {
         const e = err instanceof LlmError ? err : new LlmError('network_error', USER_MESSAGE.network_error, true)
@@ -250,7 +322,18 @@ export class LlmClient {
         await sleep(Math.min(8_000, 1_000 * 2 ** attempt))
       }
     }
-    throw lastError ?? new LlmError('invalid_response', USER_MESSAGE.invalid_response, false)
+    const failure = lastError ?? new LlmError('invalid_response', USER_MESSAGE.invalid_response, false)
+    // 失败也记账：成功率与最近记录需要真实反映失败调用
+    this.usage.recordCall({
+      model: this.config.model,
+      task,
+      durationMs: Date.now() - startedAt,
+      status: 'error',
+      errorCode: failure.code,
+      promptTokens: 0,
+      completionTokens: 0,
+    })
+    throw failure
   }
 
   private async attempt(endpoint: string, body: ChatRequestBody): Promise<LlmResponse> {

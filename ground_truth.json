@@ -1,0 +1,43 @@
+{
+  "dataset": "LogiCheck AI UAT fixtures v1.0",
+  "synthetic": true,
+  "baseline": {
+    "shipment_id": "LCAI-UAT-001",
+    "invoice_no": "INV-LCAI-2026-001",
+    "packing_list_no": "PL-LCAI-2026-001",
+    "seller": "Shenzhen Nova Audio Technology Co., Ltd.",
+    "buyer": "Rheinblick Electronics GmbH",
+    "origin": "China",
+    "destination": "Germany",
+    "product": "Rechargeable Bluetooth Speaker",
+    "model": "NOVA-BS20",
+    "quantity": 1000,
+    "unit": "PCS",
+    "unit_price": 20.0,
+    "currency": "USD",
+    "invoice_total": 20000.0,
+    "gross_weight_kg": 620,
+    "net_weight_kg": 550,
+    "cartons": 100,
+    "hs_code": "8518.21 (illustrative; not a classification decision)",
+    "incoterm": "FOB Shenzhen",
+    "date": "2026-10-20"
+  },
+  "expected_checks": {
+    "invoice_vs_normal_packing": "quantity matches: 1000 PCS vs 1000 PCS",
+    "invoice_vs_conflict_packing": "quantity conflict: 1000 PCS vs 900 PCS",
+    "invoice_vs_edi": "quantity matches: 1000 PCS vs 1000 PCS",
+    "compliance_statement": "unverified supplier statement; no formal evidence attached"
+  },
+  "expected_ocr": {
+    "quantity": 1000,
+    "currency": "USD",
+    "total": 20000,
+    "invoice_no": "INV-LCAI-2026-001"
+  },
+  "notes": [
+    "No actual regulatory certification is claimed",
+    "HS code is illustrative only",
+    "OCR field confidence and actual rules results depend on implementation"
+  ]
+}

@@ -1,31 +1,65 @@
-# 依赖与构建产物
-node_modules/
-dist/
-*.tsbuildinfo
-.temp/
-.cache/
+# ============================================================
+# LogiCheck AI · Git 忽略规则（安全 + 构建产物）
+# 原则：源码 / 文档 / 测试 / 演示素材入库；
+#       密钥、运行时数据、依赖、构建产物、临时文件绝不入库。
+# ============================================================
 
-# 运行时数据（真实数据库 / 上传文件 / 本地发件箱）
+# ---------- 依赖 ----------
+node_modules/
+.pnp/
+.pnp.js
+
+# ---------- 构建产物 ----------
+dist/
+build/
+out/
+*.tsbuildinfo
+.vite/
+*.eslintcache
+
+# ---------- 运行时数据（绝不入库）----------
 data/
 *.db
 *.db-wal
 *.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+uploads/
 outbox/
+mail-outbox/
 
-# 本地环境与日志
+# ---------- 密钥与环境变量（绝不入库）----------
 .env
-.env.local
-*.log
-npm-debug.log*
+.env.*
+!.env.example
+!.env.example.*
 
-# 系统与编辑器
+# ---------- 发布 staging（生成物，不入库）----------
+deploy-bundle/
+
+# ---------- 日志与临时文件 ----------
+*.log
+logs/
+npm-debug.log*
+.temp/
+.cache/
+tmp/
+temp/
+
+# ---------- 系统与编辑器 ----------
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
+*.swp
+*.swo
 
-# 会话与工作区数据（非项目源码）
+# ---------- WorkBuddy 内部状态（非项目源码）----------
 .workbuddy/
 
-# 大体量二进制交付物（可由 prototype_src 重新导出）
+# ---------- 端到端测试截图快照（自动生成，不入库）----------
+logicheck-ai-web/e2e/snapshots/
+
+# ---------- 大体量二进制交付物（可由 prototype_src 重新导出）----------
 LogiCheck_AI_HiFi_Dual_Theme_v2.zip

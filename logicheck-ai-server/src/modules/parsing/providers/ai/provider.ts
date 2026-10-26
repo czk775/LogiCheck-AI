@@ -24,8 +24,8 @@ import { verifyFieldQuote, type AiFieldClaim } from './verify.ts'
 /** 允许的单证类型 */
 const DOC_TYPES = new Set(['invoice', 'packing', 'bol', 'transport_order', 'unknown'])
 
-/** 单个字段的标准分值函数（沿用阶段三的确定性标准化） */
-const NORMALIZERS: Partial<Record<FieldKey, (raw: string) => string | null>> = {
+/** 单个字段的标准分值函数（沿用阶段三的确定性标准化；Eval 模块复用同一套规则） */
+export const NORMALIZERS: Partial<Record<FieldKey, (raw: string) => string | null>> = {
   quantity: (raw) => normalizeQuantity(raw),
   unit_price: (raw) => normalizeAmount(raw)?.amount ?? null,
   total_amount: (raw) => normalizeAmount(raw)?.amount ?? null,

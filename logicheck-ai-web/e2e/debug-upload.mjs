@@ -82,9 +82,11 @@ try {
     if (m.method === 'Runtime.exceptionThrown') errs.push(m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text)
   })
 
+  // 演示账号经后端 API 建立会话（UI 入口已按产品化要求移除），再进入货物列表
   await cdp.send('Page.navigate', { url: 'http://127.0.0.1:5173/login' })
   await sleep(1200)
-  await cdp.eval(`(() => { const b = Array.from(document.querySelectorAll('.btn')).find(e => e.textContent.includes('一键体验演示案例')); b.click(); return true })()`)
+  await cdp.eval(`(async () => { const r = await fetch('/api/auth/demo', { method: 'POST', credentials: 'include' }); return r.ok })()`, true)
+  await cdp.send('Page.navigate', { url: 'http://127.0.0.1:5173/shipments' })
   await sleep(1500)
   await cdp.eval(`document.querySelector('[data-testid="new-shipment"]').click()`)
   await sleep(1200)

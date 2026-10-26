@@ -412,10 +412,16 @@ async function main() {
     await waitFor(cdp, `!!document.querySelector('.auth-card')`, 10000, 'auth-card')
     check('A1 登录页渲染（标题/品牌/表单）', await cdp.eval(`document.querySelector('.auth-story h1')?.textContent.includes('清晰可控') && !!document.querySelector('#authForm')`))
     check(
-      'A2 登录页认证声明（按模式）',
-      API_MODE === 'real'
-        ? await cdp.eval(`document.body.textContent.includes('真实账户认证 · 数据保存在本机服务器')`)
-        : await cdp.eval(`document.body.textContent.includes('仅界面演示 · 不进行真实身份认证')`),
+      'A2 登录页半成品说明性文字已移除（认证声明 / 副标题 / 环境眉头）',
+      await cdp.eval(`(() => {
+        const t = document.body.textContent || ''
+        return !t.includes('真实账户认证 · 数据保存在本机服务器')
+          && !t.includes('仅界面演示 · 不进行真实身份认证')
+          && !t.includes('登录并继续处理你的货物和单证')
+          && !t.includes('SECURE WORKSPACE')
+          && !document.querySelector('.auth-mode-hint')
+          && !document.querySelector('.auth-card .intro')
+      })()`),
     )
     check('A3 忘记密码入口存在', await cdp.eval(`window.__t.clickByText('.text-btn','忘记密码')`))
     await waitFor(cdp, `!!document.querySelector('[data-testid="forgot-password-modal"]')`, 5000, 'forgot modal')
@@ -432,22 +438,24 @@ async function main() {
     check('A7 主题切回深色', await cdp.eval(`document.documentElement.dataset.theme === 'dark'`))
 
     /* ===== B. 演示登录 → 列表 ===== */
-    await cdp.eval(`window.__t.clickByText('.btn','一键体验演示案例')`)
+    // 演示账号经后端 API 建立会话（UI 入口已按产品化要求移除）
+    await cdp.eval(`(async () => { const r = await fetch('/api/auth/demo', { method: 'POST', credentials: 'include' }); return r.ok })()`, true)
+    await goto(`${BASE}/shipments`)
     await waitFor(cdp, `document.querySelector('[data-testid="shipment-row"]')`, 10000, 'shipment rows')
     check('B1 演示登录进入货物列表', await cdp.eval(`location.pathname === '/shipments'`))
     check('B2 演示货物 SHP-2026-001 在列表', await cdp.eval(`document.body.textContent.includes('SHP-2026-001')`))
     check('B3 演示徽章与状态（待处理异常）', await cdp.eval(`document.body.textContent.includes('· 演示') && document.body.textContent.includes('待处理异常')`))
     check(
-      'B4 侧栏环境标注（按模式）',
+      'B4 侧栏环境说明卡片已移除（按模式）',
       API_MODE === 'real'
-        ? await cdp.eval(`document.body.textContent.includes('本地服务 · SQLite 数据库')`)
-        : await cdp.eval(`document.body.textContent.includes('演示环境 · MOCK 服务')`),
+        ? await cdp.eval(`!document.body.textContent.includes('本地服务 · SQLite 数据库') && !document.querySelector('.sys-card')`)
+        : await cdp.eval(`!document.body.textContent.includes('演示环境 · MOCK 服务') && !document.querySelector('.sys-card')`),
     )
     check(
-      'B5 顶栏环境徽章（按模式）',
+      'B5 顶栏环境徽章已移除（按模式）',
       API_MODE === 'real'
-        ? await cdp.eval(`document.body.textContent.includes('REAL API · 本地服务器')`)
-        : await cdp.eval(`document.body.textContent.includes('DEMO BUILD · MOCK 服务')`),
+        ? await cdp.eval(`!document.body.textContent.includes('REAL API · 本地服务器') && !document.querySelector('.env-badge')`)
+        : await cdp.eval(`!document.body.textContent.includes('DEMO BUILD · MOCK 服务') && !document.querySelector('.env-badge')`),
     )
 
     /* ===== C. 搜索 / 筛选 / 空态 ===== */
@@ -781,7 +789,7 @@ async function main() {
     await waitFor(cdp, `document.querySelector('[data-testid="row-menu"]')`, 5000, 'row menu')
     await cdp.eval(`document.querySelector('[data-testid="delete-shipment"]').click()`)
     await waitFor(cdp, `document.querySelector('[data-testid="delete-shipment-modal"]')`, 5000, 'delete modal')
-    check('L2 删除货物需二次确认', await cdp.eval(`document.querySelector('[data-testid="delete-shipment-modal"]')?.textContent.includes('无法撤销')`))
+    check('L2 删除货物需二次确认', await cdp.eval(`document.querySelector('[data-testid="delete-shipment-modal"]')?.textContent.includes('删除这票货物')`))
     await cdp.eval(`document.querySelector('[data-testid="confirm-delete-shipment"]').click()`)
     await waitFor(cdp, `document.querySelectorAll('[data-testid="shipment-row"]').length === 1`, 5000, 'shipment deleted')
     check(
@@ -816,8 +824,9 @@ async function main() {
       await waitFor(cdp, `document.querySelector('[data-testid="shipment-row"]')`, 8000, 're-login')
       check('N2 重登后数据仍在（STORE-01）', await cdp.eval(`document.body.textContent.includes('SHP-2026-001')`))
     } else {
-      // 真实模式：演示账号密码为随机值（只能通过演示按钮进入），用演示按钮重登
-      await cdp.eval(`window.__t.clickByText('.btn','一键体验演示案例')`)
+      // 真实模式：演示账号密码为随机值，经后端 API 建立演示会话后重登
+      await cdp.eval(`(async () => { const r = await fetch('/api/auth/demo', { method: 'POST', credentials: 'include' }); return r.ok })()`, true)
+      await goto(`${BASE}/shipments`)
       await waitFor(cdp, `document.querySelector('[data-testid="shipment-row"]')`, 8000, 're-login')
       check('N2 重登后数据仍在（STORE-01）', await cdp.eval(`document.body.textContent.includes('SHP-2026-001')`))
 
@@ -873,7 +882,8 @@ async function main() {
     await goto(`${BASE}/login`)
     await waitFor(cdp, `!!document.querySelector('.auth-card')`, 8000, 'mobile auth')
     check('O1 移动端登录页单列布局', await cdp.eval(`getComputedStyle(document.querySelector('.auth-screen')).gridTemplateColumns.split(' ').length === 1`))
-    await cdp.eval(`window.__t.clickByText('.btn','一键体验演示案例')`)
+    await cdp.eval(`(async () => { const r = await fetch('/api/auth/demo', { method: 'POST', credentials: 'include' }); return r.ok })()`, true)
+    await goto(`${BASE}/shipments`)
     await waitFor(cdp, `document.querySelector('[data-testid="shipment-row"]')`, 8000, 'mobile list')
     check('O2 移动端侧栏折叠为 58px', await cdp.eval(`getComputedStyle(document.querySelector('.sidebar')).width === '58px'`))
     check('O3 移动端品牌文字隐藏（仅图标）', await cdp.eval(`getComputedStyle(document.querySelector('.brand-word')).display === 'none'`))
@@ -887,7 +897,8 @@ async function main() {
     await cdp.eval(`document.querySelector('[data-testid="theme-toggle"]').click()`)
     await sleep(300)
     check('P1 浅色主题 body 背景为雾白', await cdp.eval(`getComputedStyle(document.body).backgroundColor === 'rgb(243, 247, 251)'`))
-    await cdp.eval(`window.__t.clickByText('.btn','一键体验演示案例')`)
+    await cdp.eval(`(async () => { const r = await fetch('/api/auth/demo', { method: 'POST', credentials: 'include' }); return r.ok })()`, true)
+    await goto(`${BASE}/shipments`)
     await waitFor(cdp, `document.querySelector('[data-testid="shipment-row"]')`, 8000, 'light list')
     check('P2 浅色下列表页正常渲染（表格/徽章）', await cdp.eval(`!!document.querySelector('.ship-table') && document.body.textContent.includes('待处理异常')`))
     await goto(`${BASE}/shipments`)

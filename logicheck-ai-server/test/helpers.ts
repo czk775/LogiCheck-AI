@@ -82,7 +82,7 @@ export interface TestEnv {
   cleanup: () => Promise<void>
 }
 
-export async function createTestEnv(): Promise<TestEnv> {
+export async function createTestEnv(overrides: Partial<AppConfig> = {}): Promise<TestEnv> {
   const dir = mkdtempSync(join(tmpdir(), 'logicheck-test-'))
   const config: AppConfig = {
     port: 0,
@@ -94,6 +94,12 @@ export async function createTestEnv(): Promise<TestEnv> {
     extractionProvider: 'deterministic',
     ai: null,
     smtp: null,
+    webDistDir: '',
+    aiDailyParseLimit: 0,
+    demoPassword: '',
+    uploadRatePerMin: 10,
+    apiRatePerMin: 600,
+    ...overrides,
   }
 
   let db = openDatabase(config.databasePath)

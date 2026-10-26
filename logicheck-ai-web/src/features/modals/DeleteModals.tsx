@@ -1,4 +1,3 @@
-import { Icon } from '../../components/Icon'
 import { Button } from '../../components/Button'
 import { Modal } from '../../components/Modal'
 import { useStore } from '../../store/AppStore'
@@ -31,10 +30,6 @@ export function DeleteShipmentModal({ shipmentId }: { shipmentId: string }) {
         你即将删除 <strong style={{ color: 'var(--txt)' }}>{target?.id} · {target?.name}</strong>
         。这会删除与它关联的单证、提取字段、异常和处理记录。
       </p>
-      <div className="prototype-note">
-        <Icon name="info" size="sm" />
-        此操作在当前演示本地存储中无法撤销；正式系统还需定义服务器数据及备份的保留与清除政策。
-      </div>
     </Modal>
   )
 }
@@ -66,10 +61,6 @@ export function DeleteDocumentModal({ documentId }: { documentId: string }) {
       <p>
         确认移除 <strong style={{ color: 'var(--txt)' }}>{doc?.fileName}</strong>？关联证据会被标为缺失或需重新检查。
       </p>
-      <div className="prototype-note">
-        <Icon name="info" size="sm" />
-        演示中的删除只影响当前浏览器的本地数据。正式系统将由后端管理权限和文件清理。
-      </div>
     </Modal>
   )
 }

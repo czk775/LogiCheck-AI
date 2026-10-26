@@ -5,6 +5,7 @@ import { AppShell } from './features/layout/AppShell'
 import { AuthPage } from './features/auth/AuthPage'
 import { ShipmentListPage } from './features/shipments/ShipmentListPage'
 import { WorkspacePage } from './features/workspace/WorkspacePage'
+import { AiOverviewPage } from './features/insights/AiOverviewPage'
 import { ModalHost } from './features/modals/ModalHost'
 import { DrawerHost } from './features/drawers/DrawerHost'
 
@@ -38,6 +39,14 @@ export default function App() {
         element={
           <AuthedLayout>
             <WorkspacePage />
+          </AuthedLayout>
+        }
+      />
+      <Route
+        path="/ai-overview"
+        element={
+          <AuthedLayout>
+            <AiOverviewPage />
           </AuthedLayout>
         }
       />

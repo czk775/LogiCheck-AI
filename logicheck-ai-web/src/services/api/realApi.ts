@@ -25,6 +25,7 @@ import type {
   AiStatus,
   CheckResultLite,
   CreateShipmentRequest,
+  EvalReport,
   LoginRequest,
   LogiCheckApi,
   RecordDecisionRequest,
@@ -293,6 +294,18 @@ export class RealApi implements LogiCheckApi {
     // 该端点不需要登录态（用于未登录时也能判断后端是否接通 AI）
     const data = await request<AiStatus>('/system/ai-status')
     return data
+  }
+
+  /* ---------- AI 评估（Eval）---------- */
+
+  async getAiEval(): Promise<EvalReport | null> {
+    const data = await request<{ report: EvalReport | null }>('/system/ai-eval')
+    return data.report
+  }
+
+  async runAiEval(): Promise<EvalReport> {
+    const data = await request<{ report: EvalReport }>('/system/ai-eval/run', { method: 'POST' })
+    return data.report
   }
 
   /* ---------- 订阅（后端无推送，no-op） ---------- */

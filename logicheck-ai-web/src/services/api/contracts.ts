@@ -99,6 +99,25 @@ export interface ApiErrorShape {
 /* ---------- AI 能力状态（第五阶段）---------- */
 
 /**
+ * 单次 AI 调用记录（可观测性；不含提示词 / 响应内容 / 密钥）
+ */
+export interface AiCallRecord {
+  /** 调用完成时间（ISO 8601） */
+  at: string
+  /** 实际使用的模型名 */
+  model: string
+  /** 任务类型：extraction（字段提取）/ ocr（视觉识别）/ eval（评估） */
+  task: string
+  /** 耗时（毫秒，含内部重试） */
+  durationMs: number
+  status: 'ok' | 'error'
+  /** 失败时的稳定错误码 */
+  errorCode?: string
+  promptTokens: number
+  completionTokens: number
+}
+
+/**
  * AI 能力状态。
  *
  * 诚实边界：
@@ -121,17 +140,66 @@ export interface AiStatus {
   /** 未接通时的原因说明 */
   reason?: string
   /**
-   * 本进程累计用量（额度护栏观测口）。
+   * 本进程累计用量（额度护栏 + 可观测性观测口）。
    * 注意：这是「已用掉多少」，不是「还剩多少」——剩余额度需看服务商控制台。
    */
-  usage?: {
-    calls: number
-    promptTokens: number
-    completionTokens: number
-    totalTokens: number
-    limitTokens: number
-    exhausted: boolean
-  }
+  usage?: AiUsageSnapshot
+}
+
+/** 进程内 AI 用量快照（真实计量，非估算） */
+export interface AiUsageSnapshot {
+  calls: number
+  successCalls: number
+  failedCalls: number
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  limitTokens: number
+  exhausted: boolean
+  /** 平均耗时（毫秒） */
+  avgDurationMs: number
+  /** 最近调用记录（按时间倒序，最多 20 条） */
+  recent: AiCallRecord[]
+}
+
+/* ---------- AI 评估（Eval）---------- */
+
+export interface EvalFieldItem {
+  file: string
+  field: string
+  expected: string
+  actual: string
+  ok: boolean
+}
+
+export interface EvalConflictCase {
+  name: string
+  files: string[]
+  expected: 'consistent' | 'conflict'
+  actual: string
+  ok: boolean
+  summary: string
+}
+
+export interface EvalEvidenceItem {
+  file: string
+  field: string
+  quote: string
+  page: number | null
+  ok: boolean
+}
+
+export interface EvalReport {
+  status: 'running' | 'done' | 'error'
+  startedAt: string
+  finishedAt?: string
+  durationMs?: number
+  error?: string
+  /** 参与评估的样本总数（字段项 + 冲突用例 + 证据项） */
+  samples: number
+  extraction: { total: number; matched: number; accuracy: number; items: EvalFieldItem[] }
+  conflict: { total: number; passed: number; cases: EvalConflictCase[] }
+  evidence: { total: number; valid: number; rate: number; items: EvalEvidenceItem[] }
 }
 
 /* ---------- 服务接口 ---------- */
@@ -185,6 +253,10 @@ export interface LogiCheckApi {
 
   /* AI 能力状态（第五阶段）：不含密钥、不含限流配额 */
   getAiStatus(): Promise<AiStatus>
+
+  /* AI 评估（Eval）：读取最近一次结果；触发一次真实评估 */
+  getAiEval(): Promise<EvalReport | null>
+  runAiEval(): Promise<EvalReport>
 
   /* 处理记录（STORE-01） */
   getRuns(shipmentId: string): Promise<ProcessingRun[]>

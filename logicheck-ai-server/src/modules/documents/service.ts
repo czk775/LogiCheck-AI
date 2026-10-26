@@ -10,6 +10,7 @@ import type { Db } from '../../db/index.ts'
 import type { AppConfig } from '../../config.ts'
 import { errors } from '../../core/errors.ts'
 import { newId, nowIso } from '../../core/ids.ts'
+import { AiQuota } from '../../core/aiQuota.ts'
 import { FileStorage } from './storage.ts'
 import type { Shipment, ShipmentDocument, UploadRejection, UploadResult } from '../../types.ts'
 
@@ -60,17 +61,55 @@ export interface IncomingFile {
 
 export class DocumentService {
   private readonly storage: FileStorage
+  private readonly config: AppConfig
+  /** 单账号每日 AI 解析配额（公网防滥用；deterministic 模式不消耗） */
+  private readonly quota: AiQuota
+  /** 原始入队回调（app.ts 传入的 ParsePipeline 队列） */
+  private readonly enqueueParseRaw: (documentId: string) => void
 
   constructor(
     private readonly db: Db,
     config: AppConfig,
     private readonly shipments: { getForUser: (userId: string, id: string) => Shipment | null },
     /** 解析入队回调（阶段二：上传/重试后触发 ParsePipeline） */
-    private readonly enqueueParse: (documentId: string) => void = () => {},
+    enqueueParse: (documentId: string) => void = () => {},
     /** 核验刷新回调（阶段四：单证被移除后，现有核验结论已过时，需重跑） */
     private readonly refreshCheck: (shipmentId: string) => void = () => {},
   ) {
     this.storage = new FileStorage(config)
+    this.config = config
+    this.quota = new AiQuota(db, {
+      limit: config.aiDailyParseLimit,
+      today: () => new Date().toISOString().slice(0, 10),
+    })
+    this.enqueueParseRaw = enqueueParse
+  }
+
+  /** AI 配额耗尽时的友好原因（文件已保留，不丢数据，可重试） */
+  private quotaExceededMessage(): string {
+    return `今日 AI 解析次数已用完（每账号每天 ${this.config.aiDailyParseLimit} 份）。文件已保留，明天再试或点击「重新解析」。`
+  }
+
+  /**
+   * 入队前过 AI 配额（仅 EXTRACTION_PROVIDER=ai 且配置了上限时生效）。
+   * @returns true = 已入队；false = 配额超限未入队（单证已标记 failed + 友好原因）
+   */
+  private enqueueParse(documentId: string): boolean {
+    if (this.config.extractionProvider === 'ai' && this.config.aiDailyParseLimit > 0) {
+      const row = this.db.get<{ user_id: string }>('SELECT user_id FROM documents WHERE id = ?', documentId)
+      if (row && !this.quota.consume(row.user_id)) {
+        this.db.run(
+          'UPDATE documents SET status = ?, error = ?, updated_at = ? WHERE id = ?',
+          'failed',
+          this.quotaExceededMessage(),
+          nowIso(),
+          documentId,
+        )
+        return false
+      }
+    }
+    this.enqueueParseRaw(documentId)
+    return true
   }
 
   /* ---------- 上传（含替换模式） ---------- */
@@ -217,7 +256,11 @@ export class DocumentService {
     })
 
     if (old?.storage_key) await this.storage.remove(old.storage_key)
-    if (status === 'uploaded') this.enqueueParse(doc.id)
+    if (status === 'uploaded' && !this.enqueueParse(doc.id)) {
+      // 配额超限：DB 已标记 failed，同步返回值让上传响应立即反映真实状态
+      doc.status = 'failed'
+      doc.error = this.quotaExceededMessage()
+    }
     return doc
   }
 
@@ -291,20 +334,21 @@ export class DocumentService {
         nowIso(),
       )
     })
-    this.enqueueParse(row.id)
+    const queued = this.enqueueParse(row.id)
     const doc: ShipmentDocument = {
       id: row.id,
       shipmentId: row.shipment_id,
       fileName: row.file_name,
       docType: row.doc_type,
       format: row.format,
-      status: 'uploaded',
+      status: queued ? 'uploaded' : 'failed',
       size: row.size,
       createdAt: row.created_at,
       updatedAt: nowIso(),
       isDemo: row.is_demo === 1,
       fields: {},
     }
+    if (!queued) doc.error = this.quotaExceededMessage()
     return doc
   }
 

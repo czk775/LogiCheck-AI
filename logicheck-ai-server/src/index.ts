@@ -1,5 +1,8 @@
 /* 服务端入口：加载配置 → 打开数据库 → 装配应用 → 监听端口 */
 
+/* 必须第一个 import：ESM 按源码顺序求值，先于 node:sqlite 给出友好版本错误 */
+import './core/nodeGuard.ts'
+
 import { openDatabase } from './db/index.ts'
 import { loadConfig } from './config.ts'
 import { buildApp } from './app.ts'

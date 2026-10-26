@@ -25,6 +25,7 @@ import type {
   AiStatus,
   CheckResultLite,
   CreateShipmentRequest,
+  EvalReport,
   LogiCheckApi,
   LoginRequest,
   RecordDecisionRequest,
@@ -629,6 +630,21 @@ export class MockLogiCheckApi implements LogiCheckApi {
       ocr: 'none',
       reason: '当前为前端演示模式，未连接真实大模型；演示结果来自预置数据',
     }
+  }
+
+  /* ---------- AI 评估（Eval）---------- */
+
+  /**
+   * Mock 模式如实返回「无评估结果」：
+   * 评估必须走真实大模型，演示模式不伪造任何准确率。
+   */
+  async getAiEval(): Promise<EvalReport | null> {
+    return null
+  }
+
+  /** Mock 模式明确拒绝运行评估（不伪造结果） */
+  async runAiEval(): Promise<EvalReport> {
+    throw new Error('当前为前端演示模式（Mock）：未连接真实大模型，无法运行真实评估')
   }
 
   /* ---------- 处理记录 ---------- */
