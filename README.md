@@ -5,6 +5,10 @@
 > 开源项目 / 个人作品集，用于展示从**真实业务痛点 → 产品定义 → AI 技术架构 → 可运行落地**的完整能力。
 >
 > 遵循 MIT 协议开源，欢迎 issue 与讨论。
+>
+> **在线体验**：[https://logicheck-ai.app.workbuddy.host](https://logicheck-ai.app.workbuddy.host/?sharecode=75DPZCRIZJ)（可直接用下方演示账号登录，无需注册）
+
+
 
 ---
 
@@ -201,7 +205,9 @@ npm run dev                   # Vite 开发服务器，已配置 /api 代理到�
 
 ### 3. 演示账号
 
-首次启动会自动种子 5 个演示账号与 20 票历史货物（每票含 2–3 份真实单证、字段、异常、处理记录与 5 条规则预检），可直接登录体验：
+**线上环境**：https://logicheck-ai.app.workbuddy.host/?sharecode=75DPZCRIZJ
+
+服务启动时自动种子 5 个演示账号与 20 票历史货物（每票含 2–3 份真实单证、字段、异常、处理记录与 5 条规则预检），可直接登录体验：
 
 | 账号 | 角色定位 | 历史货物 |
 | --- | --- | --- |
@@ -234,6 +240,7 @@ cd logicheck-ai-web && node e2e/run-tests.mjs
 
 ## 九、作品集展示
 
+- **在线 Demo**：<https://logicheck-ai.app.workbuddy.host/?sharecode=75DPZCRIZJ>（演示账号见「八、本地运行方法 → 3. 演示账号」）
 - **产品截图**：见上方「核心功能」一节（`screenshots/` 目录），覆盖登录、列表、AI 概览、工作台、异常抽屉、AI 评估等真实界面。
 - **Demo 视频**：[`LogiCheckAi demo视频.mp4`](LogiCheckAi%20demo%E8%A7%86%E9%A2%91.mp4)（约 41 MB，GitHub 不支持内联播放，点击下载观看）
 
@@ -275,7 +282,7 @@ cd logicheck-ai-web && node e2e/run-tests.mjs
 │   ├── src/                    # 页面 / 组件 / API Contract / 状态管理
 │   └── e2e/                    # CDP 无头浏览器端到端测试（91 项）
 ├── screenshots/               # 作品集展示截图
-├── demo视频.mp4                # 作品集 Demo 视频
+├── LogiCheckAi demo视频.mp4    # 作品集 Demo 视频（41 MB）
 ├── 01_*.pdf … 07_*.pdf / 06_*.edi / ground_truth.json  # 评估夹具（真实单证样例）
 ├── PRD-v2.md                  # 产品需求文档（14 项核心决策）
 └── README.md                  # 本文档
