@@ -63,3 +63,6 @@ logicheck-ai-web/e2e/snapshots/
 
 # ---------- 大体量二进制交付物（可由 prototype_src 重新导出）----------
 LogiCheck_AI_HiFi_Dual_Theme_v2.zip
+
+# ---------- 发布工具生成的应用卡片（本地私有产物）----------
+.wbapp_*.genie
