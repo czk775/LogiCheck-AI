@@ -270,6 +270,9 @@ async function setupStack() {
     DATABASE_PATH: path.join(dir, 'logicheck.db'),
     UPLOAD_DIR: path.join(dir, 'uploads'),
     MAIL_OUTBOX_DIR: path.join(dir, 'mail-outbox'),
+    // 回归栈只需要「1 票内置演示货物」的干净库；公网演示用的多账号历史货物
+    // 会改变列表首项，导致用例定位到别的货物，故此处关闭
+    SEED_SHOWCASE: 'false',
   }
   if (useRealAi) {
     serverEnv.EXTRACTION_PROVIDER = 'ai'
@@ -282,6 +285,14 @@ async function setupStack() {
       process.exit(2)
     }
     console.log('⚡ AI 模式：使用真实大模型（会消耗少量额度）')
+  } else {
+    // 回归模式强制走确定性提取（不消耗额度、耗时可预期）。
+    // 服务端启动时会自行读取 logicheck-ai-server/.env，若本机配了真实 AI，
+    // 必须在此显式覆盖，否则回归用例会意外走真实模型并被超时阈值判失败。
+    serverEnv.EXTRACTION_PROVIDER = 'deterministic'
+    serverEnv.DASHSCOPE_API_KEY = ''
+    serverEnv.AI_MODEL = ''
+    serverEnv.AI_VISION_MODEL = ''
   }
 
   const server = spawn(

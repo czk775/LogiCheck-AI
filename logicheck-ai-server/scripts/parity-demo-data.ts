@@ -1,11 +1,15 @@
 /* Parity 校验：前端 Mock 演示数据 vs 后端 seed —— 必须逐字段一致 */
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import assert from 'node:assert/strict'
 
 const require = createRequire(import.meta.url)
-const FE = 'D:/workbuddy/NewLogiCheckAI/logicheck-ai-web/src/services/mock/demoData.ts'
-const BE = 'D:/workbuddy/NewLogiCheckAI/logicheck-ai-server/src/modules/demo/seed.ts'
+/** 仓库根目录（本脚本位于 <repo>/logicheck-ai-server/scripts/） */
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+const FE = resolve(REPO_ROOT, 'logicheck-ai-web/src/services/mock/demoData.ts')
+const BE = resolve(REPO_ROOT, 'logicheck-ai-server/src/modules/demo/seed.ts')
 
 const fe = await import(pathToFileURL(FE).href)
 const be = await import(pathToFileURL(BE).href)

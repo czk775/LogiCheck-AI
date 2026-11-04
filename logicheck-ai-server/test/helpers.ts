@@ -97,6 +97,8 @@ export async function createTestEnv(overrides: Partial<AppConfig> = {}): Promise
     webDistDir: '',
     aiDailyParseLimit: 0,
     demoPassword: '',
+    seedShowcase: false,
+    fixtureDirs: [],
     uploadRatePerMin: 10,
     apiRatePerMin: 600,
     ...overrides,

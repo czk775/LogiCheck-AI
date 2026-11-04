@@ -50,6 +50,8 @@ interface Harness {
 async function setupHarness(aiBaseUrl: string, aiModel = 'qwen-plus'): Promise<Harness> {
   const dir = mkdtempSync(join(tmpdir(), 'logicheck-p5-'))
   const config = loadConfig({
+    /* 本文件用「全库 LIMIT 1」定位被测单证，关闭演示种子避免干扰 */
+    SEED_SHOWCASE: 'false',
     DATABASE_PATH: join(dir, 'test.db'),
     UPLOAD_DIR: join(dir, 'uploads'),
     MAIL_OUTBOX_DIR: join(dir, 'outbox'),
@@ -326,6 +328,8 @@ test('PH5E2E5 扫描件 PDF（无文本层）→ 走 OCR 路径，不再直接�
 test('PH5E2E6 未配置 AI 时保持诚实：AI 模式但无 Key → 明确失败而非假装成功', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'logicheck-p5-nokey-'))
   const config = loadConfig({
+    /* 本文件用「全库 LIMIT 1」定位被测单证，关闭演示种子避免干扰 */
+    SEED_SHOWCASE: 'false',
     DATABASE_PATH: join(dir, 'test.db'),
     UPLOAD_DIR: join(dir, 'uploads'),
     MAIL_OUTBOX_DIR: join(dir, 'outbox'),

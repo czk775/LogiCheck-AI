@@ -5,19 +5,19 @@
   "description": "LogiCheck AI 服务端（第一阶段：认证 / 货物 / 单证 / 数据隔离；SQLite + 本地文件存储）",
   "type": "module",
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=22.0.0"
   },
   "scripts": {
-    "dev": "node --experimental-sqlite --disable-warning=ExperimentalWarning --env-file-if-exists=.env --import tsx/esm src/index.ts",
+    "dev": "node --disable-warning=ExperimentalWarning --import tsx/esm src/index.ts",
     "build": "tsc -p tsconfig.build.json && node --import tsx/esm scripts/copy-assets.ts",
-    "start": "node --experimental-sqlite --disable-warning=ExperimentalWarning --env-file-if-exists=.env dist/index.js",
+    "start": "node --disable-warning=ExperimentalWarning dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
-    "test": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx/esm --test test/*.test.ts",
-    "migrate": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx/esm src/db/migrate.ts",
+    "test": "node --disable-warning=ExperimentalWarning --import tsx/esm --test test/*.test.ts",
+    "migrate": "node --disable-warning=ExperimentalWarning --import tsx/esm src/db/migrate.ts",
     "ai:check": "node --import tsx/esm scripts/ai-check.ts",
     "ai:quota": "node --import tsx/esm scripts/ai-quota.ts",
     "ai:models": "node --import tsx/esm scripts/ai-models.ts",
-    "ai:e2e": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx/esm scripts/ai-e2e.ts",
+    "ai:e2e": "node --disable-warning=ExperimentalWarning --import tsx/esm scripts/ai-e2e.ts",
     "ai:fixtures": "node test/fixtures/real/make-fixtures.mjs",
     "bundle": "node --import tsx/esm scripts/make-deploy-bundle.ts"
   },
@@ -25,12 +25,14 @@
     "@fastify/cookie": "^11.0.2",
     "@fastify/multipart": "^9.0.3",
     "@napi-rs/canvas": "^1.0.13",
+    "better-sqlite3": "^13.0.3",
     "fastify": "^5.3.3",
     "nodemailer": "^10.2.1",
     "pdfjs-dist": "^6.4.299",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.10.0",
     "@types/nodemailer": "^6.4.17",
     "tsx": "^4.19.2",

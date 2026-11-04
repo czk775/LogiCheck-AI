@@ -71,7 +71,7 @@ AI_DAILY_PARSE_LIMIT=50
 # 每账号每分钟上传次数 / 每 IP 每分钟 API 请求上限（0=不限制）
 UPLOAD_RATE_PER_MIN=10
 API_RATE_PER_MIN=600
-# 演示账号密码（评委登录用；非密钥）
+# 演示账号密码（体验登录用；非密钥）
 DEMO_PASSWORD=demo1234
 # CORS 来源（同端口部署可不管）
 CORS_ORIGIN=

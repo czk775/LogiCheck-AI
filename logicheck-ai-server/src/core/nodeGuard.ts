@@ -1,33 +1,81 @@
 /* ============================================================
-   Node 版本守卫
+   运行时守卫（Node 版本 + SQLite 驱动可用性）
    ------------------------------------------------------------
-   服务端使用 Node 内置 node:sqlite（DatabaseSync），该模块自
-   Node 22.5 提供（实验性，需 --experimental-sqlite 参数）。
-   发布沙箱的 Node 版本不可预知，版本不够时必须在入口处给出
-   人话错误与升级指引，而不是把 ERR_UNKNOWN_BUILTIN_MODULE
-   原样抛给部署平台。
+   数据库层有两条腿（见 db/index.ts）：
+   1. 内置 node:sqlite —— 需要 Node ≥ 22.5（部分 22.x 需 --experimental-sqlite）
+   2. better-sqlite3 —— 任何 Node ≥ 18 均可（随依赖安装）
 
-   用法：作为 src/index.ts 的第一个 import（ESM 按源码顺序
-   求值，先于 db 层的 node:sqlite import）。
+   只有「两条腿都不可用」时才判定不可运行，并在入口处给人话错误，
+   而不是把 ERR_UNKNOWN_BUILTIN_MODULE 原样抛给部署平台。
+
+   用法：作为 src/index.ts 的第一个 import（ESM 按源码顺序求值）。
    ============================================================ */
+
+import { createRequire } from 'node:module'
 
 export const MIN_NODE_MAJOR = 22
 export const MIN_NODE_MINOR = 5
 
-/** 校验 Node 版本；不满足最低要求时抛出带指引的错误 */
-export function assertNodeVersion(version: string): void {
-  const m = /^v?(\d+)\.(\d+)(?:\.(\d+))?/.exec(version)
-  if (!m) return // 无法解析（测试/异常环境）：放行，由 import 层自然报错
-  const major = Number(m[1])
-  const minor = Number(m[2])
-  const ok = major > MIN_NODE_MAJOR || (major === MIN_NODE_MAJOR && minor >= MIN_NODE_MINOR)
-  if (!ok) {
-    throw new Error(
-      `[nodeGuard] 需要 Node.js ≥ ${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}（当前 ${version}）：` +
-        `服务端使用内置 node:sqlite 数据库。请升级 Node（推荐 LTS 22+）后重试。`,
-    )
+/** 内置 node:sqlite 在当前 Node 上是否真的可用（实际尝试加载） */
+export function hasBuiltinSqlite(): boolean {
+  try {
+    const mod = createRequire(import.meta.url)('node:sqlite') as { DatabaseSync?: unknown }
+    return typeof mod.DatabaseSync === 'function'
+  } catch {
+    return false
   }
 }
 
-/* 模块加载即校验（index.ts 首个 import，先于 node:sqlite 求值） */
-assertNodeVersion(process.version)
+/** better-sqlite3 是否已安装可用 */
+export function hasBetterSqlite(): boolean {
+  try {
+    const mod = createRequire(import.meta.url)('better-sqlite3') as { default?: unknown }
+    return typeof mod === 'function' || typeof mod.default === 'function'
+  } catch {
+    return false
+  }
+}
+
+/** 版本是否达到内置 node:sqlite 的下限 */
+export function satisfiesMinNode(version: string): boolean {
+  const m = /^v?(\d+)\.(\d+)(?:\.(\d+))?/.exec(version)
+  if (!m) return true // 无法解析（异常/测试环境）：放行
+  const major = Number(m[1])
+  const minor = Number(m[2])
+  return major > MIN_NODE_MAJOR || (major === MIN_NODE_MAJOR && minor >= MIN_NODE_MINOR)
+}
+
+/** 驱动可用性探测结果（可注入，便于测试两条腿的各种组合） */
+export interface DriverProbe {
+  builtin: boolean
+  better: boolean
+}
+
+/**
+ * 校验运行时能否提供 SQLite。
+ * 内置可用 → 放行；否则看 better-sqlite3；两者都没有才抛错。
+ */
+export function assertRuntime(
+  version: string,
+  probe: DriverProbe = { builtin: hasBuiltinSqlite(), better: hasBetterSqlite() },
+): void {
+  if (satisfiesMinNode(version) && probe.builtin) return
+  if (probe.better) return
+  throw new Error(
+    `[nodeGuard] 当前 Node ${version} 没有可用的 SQLite 驱动：` +
+      `内置 node:sqlite 需要 Node ≥ ${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}，且未安装 better-sqlite3。` +
+      `请执行 npm install（或升级 Node）后重试。`,
+  )
+}
+
+/** 兼容旧命名：只判断版本是否达到内置模块下限 */
+export function assertNodeVersion(version: string): void {
+  if (satisfiesMinNode(version)) return
+  throw new Error(
+    `[nodeGuard] 需要 Node.js ≥ ${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}（当前 ${version}）：` +
+      `内置 node:sqlite 不可用，且未启用 better-sqlite3 兜底。请执行 npm install 或升级 Node 后重试。`,
+  )
+}
+
+/* 模块加载即在入口处校验（index.ts 首个 import） */
+assertRuntime(process.version)

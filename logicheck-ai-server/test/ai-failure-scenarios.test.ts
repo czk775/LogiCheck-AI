@@ -45,6 +45,8 @@ interface Harness {
 async function setupHarness(aiBaseUrl: string, opts: { timeoutMs?: string; maxRetries?: string } = {}): Promise<Harness> {
   const dir = mkdtempSync(join(tmpdir(), 'logicheck-p5f-'))
   const config = loadConfig({
+    /* 本文件用「全库 LIMIT 1」定位被测单证，关闭演示种子避免干扰 */
+    SEED_SHOWCASE: 'false',
     DATABASE_PATH: join(dir, 'test.db'),
     UPLOAD_DIR: join(dir, 'uploads'),
     MAIL_OUTBOX_DIR: join(dir, 'outbox'),
@@ -308,6 +310,8 @@ test('PH5F9 失败原因不含密钥明文（多场景覆盖）', async () => {
 test('PH5F10 AI 未配置时上传 → 明确失败，不回落成确定性提取冒充 AI', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'logicheck-p5n-'))
   const config = loadConfig({
+    /* 本文件用「全库 LIMIT 1」定位被测单证，关闭演示种子避免干扰 */
+    SEED_SHOWCASE: 'false',
     DATABASE_PATH: join(dir, 'test.db'),
     UPLOAD_DIR: join(dir, 'uploads'),
     MAIL_OUTBOX_DIR: join(dir, 'outbox'),
@@ -383,6 +387,8 @@ test('PH5F12 OCR 未配置时错误码为 ocr_not_configured（图片单证）',
   // 不配置视觉模型：AI_VISION_MODEL 留空且 AI_MODEL 也不可用
   const dir = mkdtempSync(join(tmpdir(), 'logicheck-p5o-'))
   const config = loadConfig({
+    /* 本文件用「全库 LIMIT 1」定位被测单证，关闭演示种子避免干扰 */
+    SEED_SHOWCASE: 'false',
     DATABASE_PATH: join(dir, 'test.db'),
     UPLOAD_DIR: join(dir, 'uploads'),
     MAIL_OUTBOX_DIR: join(dir, 'outbox'),

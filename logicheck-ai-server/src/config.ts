@@ -1,12 +1,14 @@
 /* 服务端配置：环境变量 → 校验后的配置对象。密钥只走环境变量，不落库、不进前端。 */
 
 import { env as loadEnv } from 'node:process'
+import { existsSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
+import { loadDotEnv } from './core/env.ts'
 
 /** 本文件所在目录（src/config.ts → 上三级为服务端根；dist/config.js 同理） */
-const SERVER_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+export const SERVER_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const schema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
@@ -44,8 +46,10 @@ const schema = z.object({
   UPLOAD_RATE_PER_MIN: z.coerce.number().int().min(0).default(10),
   /* 公网防滥用：每 IP 每分钟 API 请求上限（0 = 不限制；健康检查豁免） */
   API_RATE_PER_MIN: z.coerce.number().int().min(0).default(600),
-  /* 演示账号（供评委登录）：启动时确保存在，密码走环境变量，默认仅用于演示 */
+  /* 演示账号（供体验登录）：启动时确保存在，密码走环境变量，默认仅用于演示 */
   DEMO_PASSWORD: z.string().default('demo1234'),
+  /* 启动时写入演示账号的历史货物与原件（默认开启；自动化测试默认关闭，避免污染用例） */
+  SEED_SHOWCASE: z.enum(['true', 'false']).default('true'),
   /* 可选 SMTP（全部留空 → 本地发件箱模式） */
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().optional(),
@@ -99,6 +103,10 @@ export interface AppConfig {
   apiRatePerMin: number
   /** 演示账号密码（启动种子用；非密钥，仅演示用途） */
   demoPassword: string
+  /** 是否写入演示账号的历史货物与原件（生产开启；自动化测试默认关闭） */
+  seedShowcase: boolean
+  /** 演示原件（UAT 夹具）候选目录，按顺序查找 */
+  fixtureDirs: readonly string[]
   smtp: {
     host: string
     port: number
@@ -156,6 +164,8 @@ function buildAiConfig(input: {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = loadEnv): AppConfig {
+  /* 真实进程环境（非测试注入）时先补齐 .env：不依赖命令行开关，旧版 Node 同样生效 */
+  if (env === loadEnv) loadDotEnv()
   const parsed = schema.parse(env)
   const smtpReady =
     !!parsed.SMTP_HOST && !!parsed.SMTP_USER && !!parsed.SMTP_PASS && !!parsed.MAIL_FROM
@@ -183,7 +193,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv): AppConfig {
     databasePath: resolve(SERVER_ROOT, parsed.DATABASE_PATH),
     uploadDir: resolve(SERVER_ROOT, parsed.UPLOAD_DIR),
     mailOutboxDir: resolve(SERVER_ROOT, parsed.MAIL_OUTBOX_DIR),
-    webDistDir: parsed.WEB_DIST_DIR.trim() ? resolve(SERVER_ROOT, parsed.WEB_DIST_DIR) : '',
+    /* 前端产物目录：显式配置优先；未配置时自动使用服务端根目录下的 public/
+       （发布产物就是这种布局：app/ 放编译后的服务端，public/ 放前端），
+       本地开发没有 public/ → 保持纯 API 模式，由 Vite dev server 提供页面 */
+    webDistDir: parsed.WEB_DIST_DIR.trim()
+      ? resolve(SERVER_ROOT, parsed.WEB_DIST_DIR)
+      : existsSync(resolve(SERVER_ROOT, 'public', 'index.html'))
+        ? resolve(SERVER_ROOT, 'public')
+        : '',
     sessionTtlDays: parsed.SESSION_TTL_DAYS,
     corsOrigin: parsed.CORS_ORIGIN,
     extractionProvider:
@@ -193,6 +210,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv): AppConfig {
     uploadRatePerMin: parsed.UPLOAD_RATE_PER_MIN,
     apiRatePerMin: parsed.API_RATE_PER_MIN,
     demoPassword: parsed.DEMO_PASSWORD,
+    seedShowcase: parsed.SEED_SHOWCASE === 'true',
+    fixtureDirs: [resolve(SERVER_ROOT, 'fixtures'), resolve(SERVER_ROOT, '..')],
     smtp: smtpReady
       ? {
           host: parsed.SMTP_HOST!,

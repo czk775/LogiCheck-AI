@@ -18,6 +18,7 @@ import { createMailService, type MailService } from './modules/mail/index.ts'
 import { AuthService } from './modules/auth/service.ts'
 import { registerAuthRoutes } from './modules/auth/routes.ts'
 import { seedRules, seedDemoAccount } from './modules/demo/seed.ts'
+import { seedShowcase } from './modules/demo/showcase.ts'
 import { registerShipmentRoutes } from './modules/shipments/routes.ts'
 import { ShipmentService } from './modules/shipments/service.ts'
 import { registerDocumentRoutes } from './modules/documents/routes.ts'
@@ -53,7 +54,20 @@ export function buildApp(options: { config?: AppConfig; db?: Db; mail?: MailServ
   if (!db) throw new Error('buildApp 需要显式传入 db（测试用临时库，生产用配置库）')
   migrate(db)
   seedRules(db) // 合规规则参考数据（幂等）
-  seedDemoAccount(db, config.demoPassword) // 演示账号（幂等；评委可直接登录）
+  seedDemoAccount(db, config.demoPassword) // 演示账号（幂等；体验账号可直接登录）
+  /* 演示账号的历史货物与原件（幂等：账号/货物按固定 ID 判断，环境重置后重启即恢复） */
+  if (config.seedShowcase) {
+    const seeded = seedShowcase(db, config.demoPassword, {
+      uploadDir: config.uploadDir,
+      fixtureDirs: config.fixtureDirs,
+    })
+    if (seeded.shipmentsCreated > 0) {
+      console.log(
+        `[seed] 演示账号 ${seeded.accounts} 个，新增历史货物 ${seeded.shipmentsCreated} 票` +
+          (seeded.documentsMissingFile > 0 ? `（${seeded.documentsMissingFile} 份单证缺少原件）` : ''),
+      )
+    }
+  }
   const mail = options.mail ?? createMailService(config)
 
   const app = Fastify({
@@ -171,9 +185,9 @@ export function buildApp(options: { config?: AppConfig; db?: Db; mail?: MailServ
     mode: mail.mode,
     extraction: providers.extraction.id,
     ocr: providers.ocr.id,
-    /* 运行时信息：发布后核实沙箱 Node 版本（node:sqlite 需 ≥22.5） */
+    /* 运行时信息：发布后核实沙箱 Node 版本与实际生效的 SQLite 驱动 */
     node: process.version,
-    sqlite: 'node:sqlite',
+    sqlite: db.driver,
   }))
 
   /* AI 能力状态（不返回任何密钥，仅返回是否接通与模型名，供前端展示） */
